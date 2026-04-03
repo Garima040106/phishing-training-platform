@@ -163,10 +163,14 @@ def dashboard(request):
     """Main dashboard view"""
     profile = request.user.userprofile
     recent_attempts = UserAttempt.objects.filter(user=request.user).order_by('-timestamp')[:10]
-    recommendations = TrainingRecommendation.objects.filter(user=request.user, is_read=False)[:3]
-    
-    # Mark recommendations as read
-    recommendations.update(is_read=True)
+    recommendations = list(
+        TrainingRecommendation.objects.filter(user=request.user, is_read=False).order_by('-created_at')[:3]
+    )
+
+    # Mark selected recommendations as read
+    if recommendations:
+        recommendation_ids = [recommendation.id for recommendation in recommendations]
+        TrainingRecommendation.objects.filter(id__in=recommendation_ids).update(is_read=True)
     
     # Get skill map for next difficulty
     skill_map = {

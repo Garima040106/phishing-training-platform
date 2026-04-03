@@ -1,10 +1,12 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
+from django.conf import settings
 from django.db.models import Avg
-from django.http import JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
+from pathlib import Path
 
 from .models import PhishingScenario, TrainingRecommendation, UserAttempt
 from ml_engine.kaggle_trainer import classify_user_skill, detect_anomaly
@@ -335,3 +337,23 @@ def methodology(request):
         {"layer": "Frontend", "tech": "React + Tailwind + Chart.js"},
     ]
     return JsonResponse({"cards": cards, "stack": stack})
+
+
+@require_GET
+def spa_index(request, path=""):
+    dist_index = Path(settings.BASE_DIR) / "frontend" / "dist" / "index.html"
+    if not dist_index.exists():
+        return HttpResponse(
+            "Frontend build not found. Run: cd frontend && npm run build",
+            status=503,
+            content_type="text/plain",
+        )
+    return FileResponse(dist_index.open("rb"), content_type="text/html")
+
+
+@require_GET
+def spa_assets(request, path):
+    asset_path = Path(settings.BASE_DIR) / "frontend" / "dist" / "assets" / path
+    if not asset_path.exists() or not asset_path.is_file():
+        return HttpResponse("Asset not found", status=404)
+    return FileResponse(asset_path.open("rb"))

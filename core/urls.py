@@ -3,6 +3,11 @@ from . import views
 from . import api_views
 
 urlpatterns = [
+    path('', api_views.spa_index, name='spa_home'),
+    path('app/', api_views.spa_index, name='spa_app'),
+    path('app/<path:path>', api_views.spa_index, name='spa_app_path'),
+    path('assets/<path:path>', api_views.spa_assets, name='spa_assets'),
+
     path('register/', views.register_view, name='register'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
