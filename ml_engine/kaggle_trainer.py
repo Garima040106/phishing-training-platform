@@ -1,264 +1,250 @@
-"""
-Advanced ML Training with Real Kaggle Datasets
-Trains RandomForest and IsolationForest on real phishing/legitimate emails
+"""Kaggle-backed model training for PhishGuard AI.
+
+Trains:
+- Skill classifier (RandomForest) for user level prediction
+- Anomaly detector (IsolationForest) for behavior anomalies
+
+Also computes real email feature distributions from Kaggle phishing + Enron datasets
+and writes a training quality report.
 """
 
-import os
+import json
+import logging
+from pathlib import Path
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-from pathlib import Path
-from sklearn.ensemble import RandomForestClassifier, IsolationForest
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import StandardScaler
-import logging
-import warnings
+from sklearn.ensemble import IsolationForest, RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
 
-warnings.filterwarnings('ignore')
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / 'saved_models'
-DATASETS_DIR = BASE_DIR.parent / 'datasets'
+MODEL_DIR = BASE_DIR / "saved_models"
+DATASETS_DIR = BASE_DIR.parent / "datasets"
 
-RF_MODEL_PATH = MODEL_DIR / 'rf_skill.pkl'
-ISO_MODEL_PATH = MODEL_DIR / 'iso_forest.pkl'
+RF_MODEL_PATH = MODEL_DIR / "rf_skill.pkl"
+ISO_MODEL_PATH = MODEL_DIR / "iso_forest.pkl"
+TRAINING_REPORT_PATH = MODEL_DIR / "training_report.json"
 
 
 class KaggleDatasetLoader:
-    """Load and process real Kaggle datasets"""
-    
     @staticmethod
-    def load_phishing_emails():
-        """Load phishing email dataset"""
-        try:
-            phishing_path = DATASETS_DIR / 'phishing_email.csv'
-            if not phishing_path.exists():
-                logger.warning("❌ Phishing dataset not found")
-                return None
-            
-            logger.info(f"📥 Loading phishing email dataset ({phishing_path.stat().st_size / 1024 / 1024:.1f}MB)...")
-            df = pd.read_csv(phishing_path, nrows=5000)  # Load subset for efficiency
-            logger.info(f"✓ Loaded {len(df)} phishing emails")
-            return df
-        except Exception as e:
-            logger.error(f"❌ Error loading phishing dataset: {e}")
+    def load_phishing_emails(max_rows=5000):
+        path = DATASETS_DIR / "phishing_email.csv"
+        if not path.exists():
+            logger.warning("❌ Phishing dataset not found")
             return None
-    
+        logger.info(f"📥 Loading phishing dataset ({path.stat().st_size / 1024 / 1024:.1f}MB)...")
+        frame = pd.read_csv(path, nrows=max_rows)
+        logger.info(f"✓ Loaded {len(frame)} phishing samples")
+        return frame
+
     @staticmethod
-    def load_enron_emails():
-        """Load Enron legitimate emails"""
-        try:
-            enron_path = DATASETS_DIR / 'emails.csv'
-            if not enron_path.exists():
-                logger.warning("❌ Enron dataset not found")
-                return None
-            
-            logger.info(f"📥 Loading Enron email dataset ({enron_path.stat().st_size / 1024 / 1024:.1f}MB)...")
-            df = pd.read_csv(enron_path, nrows=5000)  # Load subset for efficiency
-            logger.info(f"✓ Loaded {len(df)} legitimate emails from Enron")
-            return df
-        except Exception as e:
-            logger.error(f"❌ Error loading Enron dataset: {e}")
+    def load_enron_emails(max_rows=5000):
+        path = DATASETS_DIR / "emails.csv"
+        if not path.exists():
+            logger.warning("❌ Enron dataset not found")
             return None
-    
-    @staticmethod
-    def extract_email_features(email_text):
-        """Extract features from email text"""
-        if not isinstance(email_text, str) or pd.isna(email_text):
-            email_text = ""
-        
-        email_lower = email_text.lower()
-        
-        features = {
-            'urgency_indicators': sum(1 for word in ['urgent', 'immediately', 'asap', 'now', 'verify', 'confirm', 'act now', 'limited time'] if word in email_lower),
-            'suspicious_links': sum(1 for marker in ['http', 'www', 'click', 'bit.ly', 'tinyurl'] if marker in email_lower),
-            'attachment_mentions': sum(1 for word in ['attachment', 'attach', 'file', 'document', 'exe', 'zip'] if word in email_lower),
-            'grammar_errors': email_lower.count('??') + email_lower.count('!!!') + email_lower.count('...'),
-            'capital_letters': sum(1 for c in email_text if c.isupper()),
-            'email_length': len(email_text),
-            'suspicious_chars': sum(1 for c in email_text if c in '!@#$%^&*()_+-=[]{}|;:,.<>?'),
-            'avg_word_length': np.mean([len(w) for w in email_text.split()]) if len(email_text.split()) > 0 else 0,
-        }
-        
-        return features
+        logger.info(f"📥 Loading Enron dataset ({path.stat().st_size / 1024 / 1024:.1f}MB)...")
+        frame = pd.read_csv(path, nrows=max_rows)
+        logger.info(f"✓ Loaded {len(frame)} Enron samples")
+        return frame
 
 
-class AdvancedSkillClassifier:
-    """Train skill classifier on real email data"""
-    
-    @staticmethod
-    def generate_synthetic_skill_data():
-        """Generate synthetic user skill data based on email characteristics"""
-        logger.info("🔄 Generating synthetic skill progression data...")
-        np.random.seed(42)
-        
-        X = []
-        y = []
-        
-        # Beginner: low accuracy, slow response, struggles with phishing indicators
-        for _ in range(150):
-            accuracy = np.random.uniform(0.10, 0.45)
-            avg_response_time = np.random.uniform(20, 60)
-            total_attempts = np.random.randint(1, 20)
-            hard_accuracy = np.random.uniform(0.05, 0.30)
-            medium_accuracy = np.random.uniform(0.10, 0.40)
-            X.append([accuracy, avg_response_time, total_attempts, hard_accuracy, medium_accuracy])
-            y.append(0)
-        
-        # Intermediate: improving accuracy, moderate response time
-        for _ in range(150):
-            accuracy = np.random.uniform(0.45, 0.75)
-            avg_response_time = np.random.uniform(10, 35)
-            total_attempts = np.random.randint(20, 60)
-            hard_accuracy = np.random.uniform(0.35, 0.65)
-            medium_accuracy = np.random.uniform(0.50, 0.75)
-            X.append([accuracy, avg_response_time, total_attempts, hard_accuracy, medium_accuracy])
-            y.append(1)
-        
-        # Advanced: high accuracy, fast response, expert phishing recognition
-        for _ in range(150):
-            accuracy = np.random.uniform(0.75, 1.0)
-            avg_response_time = np.random.uniform(3, 15)
-            total_attempts = np.random.randint(60, 150)
-            hard_accuracy = np.random.uniform(0.75, 1.0)
-            medium_accuracy = np.random.uniform(0.85, 1.0)
-            X.append([accuracy, avg_response_time, total_attempts, hard_accuracy, medium_accuracy])
-            y.append(2)
-        
-        return np.array(X), np.array(y)
-    
-    @staticmethod
-    def train_skill_classifier():
-        """Train RandomForest classifier"""
-        logger.info("\n" + "="*60)
-        logger.info("🤖 TRAINING SKILL CLASSIFIER (Random Forest)")
-        logger.info("="*60)
-        
-        X, y = AdvancedSkillClassifier.generate_synthetic_skill_data()
-        logger.info(f"📊 Training data: {len(X)} samples, {X.shape[1]} features")
-        logger.info(f"   Classes: {np.bincount(y)}")
-        
-        clf = RandomForestClassifier(
-            n_estimators=150,
-            max_depth=20,
-            min_samples_split=5,
-            min_samples_leaf=2,
-            random_state=42,
-            n_jobs=-1,
-            verbose=0
-        )
-        
-        logger.info("🔨 Fitting model...")
-        clf.fit(X, y)
-        
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        joblib.dump(clf, RF_MODEL_PATH)
-        
-        logger.info(f"✅ Skill classifier trained!")
-        logger.info(f"   - Saved to: {RF_MODEL_PATH}")
-        logger.info(f"   - Accuracy: {clf.score(X, y):.2%}")
-        logger.info(f"   - Features: {X.shape[1]}")
-        
-        return clf
+def _to_text_series(phishing_df, enron_df):
+    phishing_text = phishing_df.get("text_combined", pd.Series(dtype=str)).fillna("").astype(str)
+    enron_text = enron_df.get("message", pd.Series(dtype=str)).fillna("").astype(str)
+    return phishing_text, enron_text
 
 
-class AdvancedAnomalyDetector:
-    """Train anomaly detector on real user behavior patterns"""
-    
-    @staticmethod
-    def generate_synthetic_behavior_data():
-        """Generate synthetic normal user behavior data"""
-        logger.info("🔄 Generating synthetic normal behavior patterns...")
-        np.random.seed(42)
-        
-        X = []
-        # Normal user behavior patterns
-        for _ in range(800):
-            accuracy = np.random.uniform(0.20, 0.95)
-            response_time = np.random.uniform(3, 45)
-            consistency = np.random.uniform(0.60, 0.99)
-            X.append([accuracy, response_time, consistency])
-        
-        return np.array(X)
-    
-    @staticmethod
-    def train_anomaly_detector():
-        """Train IsolationForest for anomaly detection"""
-        logger.info("\n" + "="*60)
-        logger.info("🔍 TRAINING ANOMALY DETECTOR (Isolation Forest)")
-        logger.info("="*60)
-        
-        X = AdvancedAnomalyDetector.generate_synthetic_behavior_data()
-        logger.info(f"📊 Training data: {len(X)} samples, {X.shape[1]} features")
-        
-        detector = IsolationForest(
-            n_estimators=150,
-            contamination=0.05,
-            random_state=42,
-            n_jobs=-1
-        )
-        
-        logger.info("🔨 Fitting model...")
-        detector.fit(X)
-        
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        joblib.dump(detector, ISO_MODEL_PATH)
-        
-        logger.info(f"✅ Anomaly detector trained!")
-        logger.info(f"   - Saved to: {ISO_MODEL_PATH}")
-        logger.info(f"   - Contamination: 5%")
-        logger.info(f"   - Features: {X.shape[1]}")
-        
-        return detector
+def _extract_email_features(text):
+    text = text if isinstance(text, str) else ""
+    lower = text.lower()
+    words = text.split()
+    return {
+        "urgency": sum(token in lower for token in ["urgent", "immediately", "asap", "verify", "act now"]),
+        "links": sum(token in lower for token in ["http", "www", "bit.ly", "tinyurl", "click here"]),
+        "attachments": sum(token in lower for token in ["attachment", "attached", ".zip", ".exe", ".docm"]),
+        "grammar_noise": lower.count("!!!") + lower.count("??") + lower.count("...") + lower.count("kindly"),
+        "caps_ratio": (sum(ch.isupper() for ch in text) / max(len(text), 1)),
+        "length": len(text),
+        "avg_word_length": float(np.mean([len(w) for w in words])) if words else 0.0,
+    }
+
+
+def _build_email_feature_frame(phishing_text, enron_text):
+    phishing_features = [_extract_email_features(text) for text in phishing_text]
+    enron_features = [_extract_email_features(text) for text in enron_text]
+    phishing_frame = pd.DataFrame(phishing_features)
+    enron_frame = pd.DataFrame(enron_features)
+    phishing_frame["label"] = 1
+    enron_frame["label"] = 0
+    return pd.concat([phishing_frame, enron_frame], ignore_index=True)
+
+
+def _email_quality_benchmark(email_feature_df):
+    feature_cols = [c for c in email_feature_df.columns if c != "label"]
+    X = email_feature_df[feature_cols]
+    y = email_feature_df["label"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    detector = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+    detector.fit(X_train, y_train)
+    y_pred = detector.predict(X_test)
+    return {
+        "email_benchmark_accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
+        "email_benchmark_f1": round(float(f1_score(y_test, y_pred)), 4),
+        "samples": int(len(email_feature_df)),
+    }
+
+
+def _generate_skill_data(email_feature_df, per_class=150):
+    rng = np.random.default_rng(42)
+    risk = (
+        email_feature_df["urgency"]
+        + email_feature_df["links"]
+        + email_feature_df["attachments"]
+        + email_feature_df["grammar_noise"]
+    )
+    risk_scale = np.clip((risk / max(risk.quantile(0.95), 1)).to_numpy(), 0, 1)
+
+    rows = []
+    labels = []
+    for skill_label, cfg in enumerate(
+        [
+            {"acc": (0.10, 0.45), "rt": (20, 60), "attempts": (1, 20), "hard": (0.05, 0.30), "med": (0.10, 0.40)},
+            {"acc": (0.45, 0.75), "rt": (10, 35), "attempts": (20, 60), "hard": (0.35, 0.65), "med": (0.50, 0.75)},
+            {"acc": (0.75, 1.00), "rt": (3, 15), "attempts": (60, 150), "hard": (0.75, 1.00), "med": (0.85, 1.00)},
+        ]
+    ):
+        for _ in range(per_class):
+            r = float(rng.choice(risk_scale))
+            accuracy = float(rng.uniform(*cfg["acc"]) - (0.08 * r if skill_label == 0 else 0.02 * r))
+            response_time = float(rng.uniform(*cfg["rt"]) + (5 * r if skill_label == 0 else 1.5 * r))
+            total_attempts = int(rng.integers(*cfg["attempts"]))
+            hard_accuracy = float(rng.uniform(*cfg["hard"]) - (0.05 * r))
+            medium_accuracy = float(rng.uniform(*cfg["med"]) - (0.03 * r))
+            rows.append(
+                [
+                    float(np.clip(accuracy, 0, 1)),
+                    float(max(response_time, 1.0)),
+                    total_attempts,
+                    float(np.clip(hard_accuracy, 0, 1)),
+                    float(np.clip(medium_accuracy, 0, 1)),
+                ]
+            )
+            labels.append(skill_label)
+    return np.array(rows), np.array(labels)
+
+
+def _generate_anomaly_data(email_feature_df, n_samples=800):
+    rng = np.random.default_rng(43)
+    risk = (
+        email_feature_df["urgency"]
+        + email_feature_df["links"]
+        + email_feature_df["attachments"]
+        + email_feature_df["grammar_noise"]
+    )
+    risk_scale = np.clip((risk / max(risk.quantile(0.95), 1)).to_numpy(), 0, 1)
+
+    normal = []
+    for _ in range(n_samples):
+        r = float(rng.choice(risk_scale))
+        accuracy = float(np.clip(rng.uniform(0.2, 0.95) - (0.05 * r), 0, 1))
+        response_time = float(max(rng.uniform(3, 45) + (2 * r), 1))
+        consistency = float(np.clip(rng.uniform(0.6, 0.99) - (0.1 * r), 0, 1))
+        normal.append([accuracy, response_time, consistency])
+    return np.array(normal)
 
 
 def train_with_kaggle_datasets():
-    """Main training function using Kaggle datasets"""
-    
-    logger.info("\n" + "="*70)
-    logger.info("🚀 PHISHGUARD AI - ADVANCED ML TRAINING WITH KAGGLE DATASETS")
-    logger.info("="*70)
-    
-    # Load real datasets
-    logger.info("\n📂 LOADING KAGGLE DATASETS")
-    logger.info("-" * 70)
-    
-    phishing_df = KaggleDatasetLoader.load_phishing_emails()
-    enron_df = KaggleDatasetLoader.load_enron_emails()
-    
+    logger.info("\n" + "=" * 72)
+    logger.info("🚀 PHISHGUARD AI - TRAINING WITH KAGGLE DATASETS")
+    logger.info("=" * 72)
+
+    phishing_df = KaggleDatasetLoader.load_phishing_emails(max_rows=5000)
+    enron_df = KaggleDatasetLoader.load_enron_emails(max_rows=5000)
+
     if phishing_df is None or enron_df is None:
-        logger.warning("\n⚠️  Real datasets not fully available")
-        logger.info("Using synthetic data for training...")
-    else:
-        logger.info(f"\n✅ Successfully loaded both Kaggle datasets!")
-        logger.info(f"   - Phishing emails: {len(phishing_df)}")
-        logger.info(f"   - Enron emails: {len(enron_df)}")
-    
-    # Train skill classifier
-    AdvancedSkillClassifier.train_skill_classifier()
-    
-    # Train anomaly detector  
-    AdvancedAnomalyDetector.train_anomaly_detector()
-    
-    logger.info("\n" + "="*70)
-    logger.info("✅ TRAINING COMPLETE!")
-    logger.info("="*70)
-    logger.info("\n📊 Final Model Summary:")
-    logger.info(f"   - Skill Classifier: {RF_MODEL_PATH.stat().st_size / 1024:.1f} KB")
-    logger.info(f"   - Anomaly Detector: {ISO_MODEL_PATH.stat().st_size / 1024:.1f} KB")
-    logger.info("\n🎯 Models are ready for use!")
-    logger.info("   - Loaded automatically on Django startup")
-    logger.info("   - Used for skill classification and anomaly detection")
-    logger.info("="*70 + "\n")
+        raise RuntimeError("Required Kaggle datasets are missing in datasets/ directory")
+
+    phishing_text, enron_text = _to_text_series(phishing_df, enron_df)
+    email_feature_df = _build_email_feature_frame(phishing_text, enron_text)
+    benchmark = _email_quality_benchmark(email_feature_df)
+
+    logger.info(f"📊 Email benchmark accuracy: {benchmark['email_benchmark_accuracy']:.2%}")
+    logger.info(f"📊 Email benchmark F1: {benchmark['email_benchmark_f1']:.2%}")
+
+    X_skill, y_skill = _generate_skill_data(email_feature_df, per_class=150)
+    skill_model = RandomForestClassifier(
+        n_estimators=150,
+        max_depth=20,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        random_state=42,
+        n_jobs=-1,
+    )
+    skill_model.fit(X_skill, y_skill)
+
+    X_anomaly = _generate_anomaly_data(email_feature_df, n_samples=800)
+    anomaly_model = IsolationForest(
+        n_estimators=150,
+        contamination=0.05,
+        random_state=42,
+        n_jobs=-1,
+    )
+    anomaly_model.fit(X_anomaly)
+
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(skill_model, RF_MODEL_PATH)
+    joblib.dump(anomaly_model, ISO_MODEL_PATH)
+
+    report = {
+        "datasets": {
+            "phishing_samples": int(len(phishing_text)),
+            "enron_samples": int(len(enron_text)),
+            "total_email_samples": int(len(email_feature_df)),
+        },
+        "quality_benchmark": benchmark,
+        "skill_training": {
+            "samples": int(len(X_skill)),
+            "features": int(X_skill.shape[1]),
+            "class_distribution": {
+                "beginner": int(np.sum(y_skill == 0)),
+                "intermediate": int(np.sum(y_skill == 1)),
+                "advanced": int(np.sum(y_skill == 2)),
+            },
+            "train_accuracy": round(float(skill_model.score(X_skill, y_skill)), 4),
+        },
+        "anomaly_training": {
+            "samples": int(len(X_anomaly)),
+            "features": int(X_anomaly.shape[1]),
+            "contamination": 0.05,
+        },
+        "artifacts": {
+            "rf_model": str(RF_MODEL_PATH),
+            "iso_model": str(ISO_MODEL_PATH),
+        },
+    }
+
+    TRAINING_REPORT_PATH.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    logger.info(f"✅ Skill model saved: {RF_MODEL_PATH}")
+    logger.info(f"✅ Anomaly model saved: {ISO_MODEL_PATH}")
+    logger.info(f"✅ Training report saved: {TRAINING_REPORT_PATH}")
+
+    return report
 
 
 def load_or_train_models():
-    """Load existing models or train new ones"""
+    """Load models from disk or train with Kaggle datasets if missing."""
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Check if models exist
     models_exist = RF_MODEL_PATH.exists() and ISO_MODEL_PATH.exists()
     
     if models_exist:
@@ -267,7 +253,7 @@ def load_or_train_models():
         anomaly_detector = joblib.load(ISO_MODEL_PATH)
         logger.info("✅ Models loaded successfully")
     else:
-        logger.info("🏗️  Training new models with Kaggle datasets...")
+        logger.info("🏗️ Training models with Kaggle datasets...")
         train_with_kaggle_datasets()
         skill_clf = joblib.load(RF_MODEL_PATH)
         anomaly_detector = joblib.load(ISO_MODEL_PATH)
@@ -310,5 +296,5 @@ def detect_anomaly(accuracy, avg_response_time, consistency_score):
     return prediction == -1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     train_with_kaggle_datasets()

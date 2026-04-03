@@ -1,0 +1,31 @@
+{
+  "datasets": {
+    "phishing_samples": 5000,
+    "enron_samples": 5000,
+    "total_email_samples": 10000
+  },
+  "quality_benchmark": {
+    "email_benchmark_accuracy": 1.0,
+    "email_benchmark_f1": 1.0,
+    "samples": 10000
+  },
+  "skill_training": {
+    "samples": 450,
+    "features": 5,
+    "class_distribution": {
+      "beginner": 150,
+      "intermediate": 150,
+      "advanced": 150
+    },
+    "train_accuracy": 1.0
+  },
+  "anomaly_training": {
+    "samples": 800,
+    "features": 3,
+    "contamination": 0.05
+  },
+  "artifacts": {
+    "rf_model": "/home/garima/Desktop/phishing-training-platform/ml_engine/saved_models/rf_skill.pkl",
+    "iso_model": "/home/garima/Desktop/phishing-training-platform/ml_engine/saved_models/iso_forest.pkl"
+  }
+}
