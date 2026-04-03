@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from ml_engine.kaggle_trainer import train_with_kaggle_datasets, load_or_train_models
+from ml_engine.user_profiling import train_user_profile_classifier
 
 
 class Command(BaseCommand):
@@ -10,6 +11,11 @@ class Command(BaseCommand):
             '--kaggle',
             action='store_true',
             help='Attempt to retrain with Kaggle datasets',
+        )
+        parser.add_argument(
+            '--profiles',
+            action='store_true',
+            help='Train user profiling Random Forest from behavioral records',
         )
 
     def handle(self, *args, **options):
@@ -22,6 +28,23 @@ class Command(BaseCommand):
                     f"F1: {report['quality_benchmark']['email_benchmark_f1']:.2%}"
                 )
             )
+        elif options['profiles']:
+            report = train_user_profile_classifier()
+            if not report:
+                self.stdout.write(
+                    self.style.WARNING(
+                        'Not enough behavioral samples to train profile classifier yet. '
+                        'Collect more user attempts and retry.'
+                    )
+                )
+                return
+            self.stdout.write(self.style.SUCCESS('Successfully trained user profile classifier!'))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Samples: {report['samples']} | Features: {report['features']} | "
+                    f"Train accuracy: {report['train_accuracy']:.2%}"
+                )
+            )
         else:
             self.stdout.write(
                 self.style.SUCCESS(
@@ -32,6 +55,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     'Models are ready. To force retraining with Kaggle datasets, '
-                    'run: python manage.py retrain_models --kaggle'
+                    'run: python manage.py retrain_models --kaggle. '
+                    'To train user profile RF model, run: python manage.py retrain_models --profiles'
                 )
             )

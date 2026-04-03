@@ -35,7 +35,7 @@ export default function DashboardPage() {
 
   if (!data) return <Loading label="Loading dashboard..." />;
 
-  const { profile, recommendations, recent_attempts } = data;
+  const { profile, recommendations, recent_attempts, detection_analysis, next_difficulty, anomaly_personalization } = data;
 
   return (
     <div className="space-y-6">
@@ -52,6 +52,60 @@ export default function DashboardPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Skill</p>
           <div className="mt-2"><SkillBadge skill={profile.skill_level} /></div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold">Detection Capability Analysis</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard label="Capability Score" value={`${detection_analysis?.capability_score ?? 0}%`} />
+          <StatCard label="Phishing Recall" value={`${detection_analysis?.phishing_recall ?? 0}%`} />
+          <StatCard label="Legitimate Accuracy" value={`${detection_analysis?.legitimate_accuracy ?? 0}%`} />
+          <StatCard label="False Positive Rate" value={`${detection_analysis?.false_positive_rate ?? 0}%`} />
+          <StatCard label="False Negative Rate" value={`${detection_analysis?.false_negative_rate ?? 0}%`} />
+        </div>
+        <p className="mt-3 text-sm text-slate-600">
+          Adaptive next difficulty recommendation: <span className="font-semibold capitalize">{next_difficulty}</span> based on your recent performance trend.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold">Anomaly Detection & Personalization</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Random Clicking" value={anomaly_personalization?.random_clicking ? "Detected" : "No"} />
+          <StatCard label="Sudden Drop" value={anomaly_personalization?.sudden_drop ? "Detected" : "No"} />
+          <StatCard label="Fast Click Ratio" value={`${anomaly_personalization?.fast_click_ratio ?? 0}%`} />
+          <StatCard label="Switch Rate" value={`${anomaly_personalization?.answer_switch_rate ?? 0}%`} />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-semibold text-slate-800">Repeated Weakness Patterns</p>
+            {anomaly_personalization?.repeated_weaknesses?.length ? (
+              <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+                {anomaly_personalization.repeated_weaknesses.map((item) => (
+                  <li key={item.type}>{item.type} ({item.count})</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">No repeated weakness pattern detected.</p>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-semibold text-slate-800">Targeted Training Modules</p>
+            {anomaly_personalization?.recommended_modules?.length ? (
+              <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                {anomaly_personalization.recommended_modules.map((item) => (
+                  <li key={item.module}>
+                    <p className="font-medium">{item.module}</p>
+                    <p className="text-xs text-slate-600">{item.reason}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">No targeted module needed right now.</p>
+            )}
+          </div>
         </div>
       </div>
 

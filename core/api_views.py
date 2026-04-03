@@ -7,10 +7,24 @@ from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 from pathlib import Path
+from collections import Counter
 
-from .models import PhishingScenario, TrainingRecommendation, UserAttempt
+from .models import AdaptiveLearningState, BehavioralDatasetRecord, PhishingScenario, TrainingRecommendation, UserAttempt
 from ml_engine.kaggle_trainer import classify_user_skill, detect_anomaly, predict_email_phishing
+from ml_engine.user_profiling import classify_user_with_profile_model, extract_user_performance_features
 from ml_engine.recommender import get_recommendations
+
+
+TARGETED_MODULE_MAP = {
+    "urgency": "Urgency Resistance Module",
+    "sender": "Sender Verification Module",
+    "links": "Safe Link Inspection Module",
+    "attachments": "Attachment Risk Module",
+    "grammar": "Language Quality Module",
+    "false_positive": "Decision Calibration Module",
+    "over_suspicious": "Trust Calibration Module",
+    "classification_error": "Phishing Pattern Fundamentals",
+}
 
 
 def _scenario_payload(scenario):
@@ -24,6 +38,63 @@ def _scenario_payload(scenario):
     }
 
 
+def _baseline_scenarios():
+    difficulty_targets = [("easy", 4), ("medium", 3), ("hard", 3)]
+    selected_ids = set()
+    selected = []
+
+    for difficulty, required_count in difficulty_targets:
+        subset = list(PhishingScenario.objects.filter(difficulty=difficulty).order_by("?")[:required_count])
+        for scenario in subset:
+            if scenario.id not in selected_ids:
+                selected.append(scenario)
+                selected_ids.add(scenario.id)
+
+    if len(selected) < 10:
+        fallback = (
+            PhishingScenario.objects.exclude(id__in=selected_ids)
+            .order_by("?")[: 10 - len(selected)]
+        )
+        selected.extend(list(fallback))
+
+    return selected[:10]
+
+
+def _mistake_types_for_attempt(scenario, user_answer, is_correct):
+    if is_correct:
+        return []
+    if scenario.is_phishing and not user_answer:
+        return scenario.get_indicators()
+    if (not scenario.is_phishing) and user_answer:
+        return ["false_positive", "over_suspicious"]
+    return ["classification_error"]
+
+
+def _persist_behavioral_record(user, source, attempts_meta):
+    if not attempts_meta:
+        return None
+
+    sample_count = len(attempts_meta)
+    correct_count = sum(1 for attempt in attempts_meta if attempt["is_correct"])
+    avg_response_time = sum(attempt["response_time"] for attempt in attempts_meta) / sample_count
+
+    mistake_counter = Counter()
+    difficulty_counter = Counter()
+    for attempt in attempts_meta:
+        difficulty_counter.update([attempt["difficulty"]])
+        mistake_counter.update(attempt["mistake_types"])
+
+    return BehavioralDatasetRecord.objects.create(
+        user=user,
+        source=source,
+        sample_count=sample_count,
+        accuracy=round((correct_count / sample_count) * 100, 2),
+        avg_response_time=round(float(avg_response_time), 2),
+        mistake_type_counts=dict(mistake_counter),
+        difficulty_distribution=dict(difficulty_counter),
+    )
+
+
 def _compute_difficulty_accuracy(user, difficulty):
     attempts = UserAttempt.objects.filter(user=user, scenario__difficulty=difficulty)
     total = attempts.count()
@@ -32,27 +103,310 @@ def _compute_difficulty_accuracy(user, difficulty):
     return attempts.filter(is_correct=True).count() / total
 
 
+def _compute_detection_analysis(user):
+    attempts = UserAttempt.objects.filter(user=user).select_related("scenario")
+
+    phishing_total = attempts.filter(scenario__is_phishing=True).count()
+    legit_total = attempts.filter(scenario__is_phishing=False).count()
+
+    true_positive = attempts.filter(scenario__is_phishing=True, user_answer=True).count()
+    false_negative = attempts.filter(scenario__is_phishing=True, user_answer=False).count()
+    true_negative = attempts.filter(scenario__is_phishing=False, user_answer=False).count()
+    false_positive = attempts.filter(scenario__is_phishing=False, user_answer=True).count()
+
+    phishing_recall = (true_positive / phishing_total) if phishing_total else 0.0
+    legitimate_accuracy = (true_negative / legit_total) if legit_total else 0.0
+    false_positive_rate = (false_positive / legit_total) if legit_total else 0.0
+    false_negative_rate = (false_negative / phishing_total) if phishing_total else 0.0
+    overall_accuracy = (attempts.filter(is_correct=True).count() / attempts.count()) if attempts.exists() else 0.0
+
+    capability_score = (
+        0.45 * overall_accuracy
+        + 0.35 * phishing_recall
+        + 0.20 * (1.0 - false_positive_rate)
+    ) * 100
+    capability_score = max(0.0, min(100.0, capability_score))
+
+    return {
+        "phishing_recall": round(phishing_recall * 100, 2),
+        "legitimate_accuracy": round(legitimate_accuracy * 100, 2),
+        "false_positive_rate": round(false_positive_rate * 100, 2),
+        "false_negative_rate": round(false_negative_rate * 100, 2),
+        "capability_score": round(capability_score, 2),
+        "samples": int(attempts.count()),
+    }
+
+
+def _anomaly_personalization_analysis(user):
+    attempts = list(
+        UserAttempt.objects.filter(user=user)
+        .select_related("scenario")
+        .order_by("-timestamp")[:20]
+    )
+    if not attempts:
+        return {
+            "isolation_anomaly": False,
+            "random_clicking": False,
+            "sudden_drop": False,
+            "repeated_weaknesses": [],
+            "fast_click_ratio": 0.0,
+            "answer_switch_rate": 0.0,
+            "recent_accuracy": 0.0,
+            "previous_accuracy": 0.0,
+            "consistency_score": 0.6,
+            "recommended_modules": [],
+        }
+
+    ordered = list(reversed(attempts))
+    fast_click_ratio = sum(1 for item in attempts if item.response_time <= 3.5) / len(attempts)
+
+    switches = 0
+    for index in range(1, len(ordered)):
+        if ordered[index].user_answer != ordered[index - 1].user_answer:
+            switches += 1
+    answer_switch_rate = switches / max(len(ordered) - 1, 1)
+    random_clicking = len(attempts) >= 8 and fast_click_ratio >= 0.5 and answer_switch_rate >= 0.65
+
+    midpoint = max(len(attempts) // 2, 1)
+    recent = attempts[:midpoint]
+    previous = attempts[midpoint:]
+    recent_accuracy = sum(1 for item in recent if item.is_correct) / max(len(recent), 1)
+    previous_accuracy = sum(1 for item in previous if item.is_correct) / max(len(previous), 1)
+    sudden_drop = len(previous) >= 3 and (previous_accuracy - recent_accuracy) >= 0.25
+
+    weakness_counter = Counter()
+    for item in attempts:
+        if item.mistake_types:
+            weakness_counter.update(item.mistake_types)
+    repeated_weaknesses = [
+        {"type": key, "count": int(count)}
+        for key, count in weakness_counter.most_common(4)
+        if count >= 2
+    ]
+
+    correctness = [1 if item.is_correct else 0 for item in attempts]
+    mean_correctness = sum(correctness) / max(len(correctness), 1)
+    variance = sum((value - mean_correctness) ** 2 for value in correctness) / max(len(correctness), 1)
+    consistency_score = max(0.0, min(1.0, 1.0 - (2 * variance)))
+
+    skill_accuracy = user.userprofile.accuracy() / 100.0
+    isolation_anomaly = bool(detect_anomaly(skill_accuracy, user.userprofile.avg_response_time, consistency_score))
+
+    recommended_modules = []
+    seen_modules = set()
+    for weakness in repeated_weaknesses:
+        module_name = TARGETED_MODULE_MAP.get(weakness["type"], "General Phishing Defense Module")
+        if module_name not in seen_modules:
+            recommended_modules.append(
+                {
+                    "module": module_name,
+                    "reason": f"Repeated weakness in {weakness['type']} ({weakness['count']} times)",
+                }
+            )
+            seen_modules.add(module_name)
+
+    if random_clicking and "Decision Calibration Module" not in seen_modules:
+        recommended_modules.append(
+            {
+                "module": "Decision Calibration Module",
+                "reason": "Random-clicking pattern detected from fast and inconsistent responses",
+            }
+        )
+    if sudden_drop and "Performance Recovery Module" not in seen_modules:
+        recommended_modules.append(
+            {
+                "module": "Performance Recovery Module",
+                "reason": "Sudden accuracy drop detected across recent attempts",
+            }
+        )
+
+    return {
+        "isolation_anomaly": isolation_anomaly,
+        "random_clicking": random_clicking,
+        "sudden_drop": sudden_drop,
+        "repeated_weaknesses": repeated_weaknesses,
+        "fast_click_ratio": round(fast_click_ratio * 100, 2),
+        "answer_switch_rate": round(answer_switch_rate * 100, 2),
+        "recent_accuracy": round(recent_accuracy * 100, 2),
+        "previous_accuracy": round(previous_accuracy * 100, 2),
+        "consistency_score": round(consistency_score, 4),
+        "recommended_modules": recommended_modules[:3],
+    }
+
+
+def _refresh_recommendations(user, profile):
+    recent_attempts = UserAttempt.objects.filter(user=user).order_by("-timestamp")[:10]
+    recs = get_recommendations(profile, recent_attempts)
+    anomaly_analysis = _anomaly_personalization_analysis(user)
+
+    personalized_recs = []
+    if anomaly_analysis["random_clicking"]:
+        personalized_recs.append(
+            {
+                "weakness": "Behavioral Risk: Random Clicking",
+                "tip": "Pause-before-click protocol enabled. Complete the Decision Calibration Module before next hard scenario.",
+            }
+        )
+    if anomaly_analysis["sudden_drop"]:
+        personalized_recs.append(
+            {
+                "weakness": "Performance Drop Detected",
+                "tip": "Recent performance declined. Recommended: Performance Recovery Module with medium-difficulty retraining.",
+            }
+        )
+    for module_item in anomaly_analysis["recommended_modules"]:
+        personalized_recs.append(
+            {
+                "weakness": f"Targeted Module: {module_item['module']}",
+                "tip": module_item["reason"],
+            }
+        )
+
+    merged_recs = personalized_recs + recs
+    TrainingRecommendation.objects.filter(user=user, is_read=False).delete()
+    for rec in merged_recs[:5]:
+        TrainingRecommendation.objects.create(
+            user=user,
+            weakness_type=rec["weakness"],
+            recommendation=rec["tip"],
+        )
+
+
+def _skill_base_difficulty(skill_level):
+    return {
+        "beginner": "easy",
+        "intermediate": "medium",
+        "advanced": "hard",
+    }.get(skill_level, "easy")
+
+
+def _compute_improvement_trend(user, window_size=10):
+    attempts = list(
+        UserAttempt.objects.filter(user=user)
+        .order_by("-timestamp")[:window_size]
+    )
+    if len(attempts) < 6:
+        return {
+            "trend": "stable",
+            "accuracy_delta": 0.0,
+            "response_time_delta": 0.0,
+        }
+
+    midpoint = len(attempts) // 2
+    recent = attempts[:midpoint]
+    previous = attempts[midpoint:]
+
+    recent_accuracy = sum(1 for item in recent if item.is_correct) / max(len(recent), 1)
+    previous_accuracy = sum(1 for item in previous if item.is_correct) / max(len(previous), 1)
+    recent_response = sum(item.response_time for item in recent) / max(len(recent), 1)
+    previous_response = sum(item.response_time for item in previous) / max(len(previous), 1)
+
+    accuracy_delta = recent_accuracy - previous_accuracy
+    response_delta = previous_response - recent_response
+
+    trend = "stable"
+    if accuracy_delta >= 0.12 and response_delta >= 1.5:
+        trend = "improving"
+    elif accuracy_delta <= -0.12:
+        trend = "declining"
+
+    return {
+        "trend": trend,
+        "accuracy_delta": round(accuracy_delta * 100, 2),
+        "response_time_delta": round(response_delta, 2),
+    }
+
+
+def _feedback_message(state):
+    if state.trend_status == "improving":
+        return "Great improvement. Difficulty is increased to keep you challenged."
+    if state.trend_status == "declining":
+        return "Performance declined recently. Difficulty is reduced and recommendations are refreshed."
+    if state.correct_streak >= 3:
+        return "Consistent correct answers detected. You are ready for higher complexity scenarios."
+    if state.incorrect_streak >= 2:
+        return "Multiple misses detected. Focus on indicator feedback before moving to harder scenarios."
+    return "Adaptive engine is monitoring your trend and tuning scenario difficulty continuously."
+
+
+def _update_adaptive_learning_state(user, profile_skill_level, latest_results=None):
+    state, _ = AdaptiveLearningState.objects.get_or_create(
+        user=user,
+        defaults={"current_difficulty": _skill_base_difficulty(profile_skill_level)},
+    )
+
+    for result in (latest_results or []):
+        if result:
+            state.correct_streak += 1
+            state.incorrect_streak = 0
+        else:
+            state.incorrect_streak += 1
+            state.correct_streak = 0
+
+    trend_data = _compute_improvement_trend(user)
+    state.trend_status = trend_data["trend"]
+    state.accuracy_delta = trend_data["accuracy_delta"]
+    state.response_time_delta = trend_data["response_time_delta"]
+
+    levels = ["easy", "medium", "hard"]
+    base_index = levels.index(_skill_base_difficulty(profile_skill_level))
+    shift = 0
+
+    if state.trend_status == "improving":
+        shift += 1
+    elif state.trend_status == "declining":
+        shift -= 1
+
+    if state.correct_streak >= 3:
+        shift += 1
+    if state.incorrect_streak >= 2:
+        shift -= 1
+
+    target_index = max(0, min(2, base_index + shift))
+    state.current_difficulty = levels[target_index]
+    state.last_feedback = _feedback_message(state)
+    state.save()
+    return state
+
+
+def _next_difficulty_for_user(user, profile_skill_level):
+    state, _ = AdaptiveLearningState.objects.get_or_create(
+        user=user,
+        defaults={"current_difficulty": _skill_base_difficulty(profile_skill_level)},
+    )
+    return state.current_difficulty
+
+
 def _update_profile_ml(profile):
     accuracy = profile.accuracy() / 100
     hard_accuracy = _compute_difficulty_accuracy(profile.user, "hard")
-    medium_accuracy = _compute_difficulty_accuracy(profile.user, "medium")
 
-    skill_label, confidence = classify_user_skill(
-        accuracy,
-        profile.avg_response_time,
-        profile.total_attempts,
-        hard_accuracy,
-        medium_accuracy,
-    )
+    profile_result = classify_user_with_profile_model(profile.user)
+    if profile_result is not None:
+        skill_label, confidence, _ = profile_result
+    else:
+        medium_accuracy = _compute_difficulty_accuracy(profile.user, "medium")
+        skill_label, confidence = classify_user_skill(
+            accuracy,
+            profile.avg_response_time,
+            profile.total_attempts,
+            hard_accuracy,
+            medium_accuracy,
+        )
     profile.skill_level = skill_label
 
-    consistency_score = 0.8 if hard_accuracy > 0.7 else 0.6
-    profile.is_anomalous = bool(detect_anomaly(accuracy, profile.avg_response_time, consistency_score))
+    anomaly_analysis = _anomaly_personalization_analysis(profile.user)
+    profile.is_anomalous = bool(
+        anomaly_analysis["isolation_anomaly"]
+        or anomaly_analysis["random_clicking"]
+        or anomaly_analysis["sudden_drop"]
+    )
     profile.save()
     return confidence
 
 
 def _profile_payload(profile):
+    feature_snapshot = extract_user_performance_features(profile.user)
     return {
         "skill_level": profile.skill_level,
         "accuracy": float(round(profile.accuracy(), 2)),
@@ -60,6 +414,14 @@ def _profile_payload(profile):
         "correct_answers": int(profile.correct_answers),
         "avg_response_time": float(round(profile.avg_response_time, 2)),
         "is_anomalous": bool(profile.is_anomalous),
+        "performance_features": {
+            "hard_accuracy": round(feature_snapshot["hard_accuracy"] * 100, 2),
+            "medium_accuracy": round(feature_snapshot["medium_accuracy"] * 100, 2),
+            "false_positive_rate": round(feature_snapshot["false_positive_rate"] * 100, 2),
+            "false_negative_rate": round(feature_snapshot["false_negative_rate"] * 100, 2),
+            "baseline_accuracy": round(feature_snapshot["baseline_accuracy"] * 100, 2),
+            "practice_accuracy": round(feature_snapshot["practice_accuracy"] * 100, 2),
+        },
     }
 
 
@@ -115,7 +477,9 @@ def me(request):
 @require_GET
 @login_required
 def baseline_quiz(request):
-    scenarios = PhishingScenario.objects.order_by("?")[:10]
+    scenarios = _baseline_scenarios()
+    if len(scenarios) < 10:
+        return JsonResponse({"error": "At least 10 scenarios are required for baseline quiz."}, status=400)
     return JsonResponse({"scenarios": [_scenario_payload(s) for s in scenarios]})
 
 
@@ -128,6 +492,7 @@ def submit_quiz(request):
 
     scenarios = list(PhishingScenario.objects.filter(id__in=scenario_ids))
     attempts = []
+    attempts_meta = []
     correct_count = 0
 
     for scenario in scenarios:
@@ -138,6 +503,7 @@ def submit_quiz(request):
         user_answer = answer_raw == "phishing"
         is_correct = user_answer == scenario.is_phishing
         response_time = float(request.POST.get(f"time_{scenario.id}", 30))
+        mistake_types = _mistake_types_for_attempt(scenario, user_answer, is_correct)
 
         if is_correct:
             correct_count += 1
@@ -149,8 +515,19 @@ def submit_quiz(request):
                 user_answer=user_answer,
                 is_correct=is_correct,
                 response_time=response_time,
+                assessment_type='baseline',
+                attempted_difficulty=scenario.difficulty,
+                mistake_types=mistake_types,
                 confidence_score=0.5,
             )
+        )
+        attempts_meta.append(
+            {
+                "is_correct": is_correct,
+                "response_time": response_time,
+                "mistake_types": mistake_types,
+                "difficulty": scenario.difficulty,
+            }
         )
 
     if not attempts:
@@ -166,18 +543,23 @@ def submit_quiz(request):
     )
 
     _update_profile_ml(profile)
+    behavioral_record = _persist_behavioral_record(request.user, "baseline", attempts_meta)
+    _refresh_recommendations(request.user, profile)
+    adaptive_state = _update_adaptive_learning_state(
+        request.user,
+        profile.skill_level,
+        latest_results=[item["is_correct"] for item in attempts_meta],
+    )
 
-    recent_attempts = UserAttempt.objects.filter(user=request.user).order_by("-timestamp")[:10]
-    recs = get_recommendations(profile, recent_attempts)
-    TrainingRecommendation.objects.filter(user=request.user, is_read=False).delete()
-    for rec in recs:
-        TrainingRecommendation.objects.create(
-            user=request.user,
-            weakness_type=rec["weakness"],
-            recommendation=rec["tip"],
-        )
-
-    return JsonResponse({"ok": True, "profile": _profile_payload(profile)})
+    return JsonResponse(
+        {
+            "ok": True,
+            "profile": _profile_payload(profile),
+            "behavioral_record_id": behavioral_record.id if behavioral_record else None,
+            "adaptive_feedback": adaptive_state.last_feedback,
+            "next_difficulty": adaptive_state.current_difficulty,
+        }
+    )
 
 
 @require_GET
@@ -194,12 +576,29 @@ def dashboard(request):
     attempts = UserAttempt.objects.filter(user=request.user).order_by("-timestamp")[:20]
     correct_series = [1 if a.is_correct else 0 for a in reversed(attempts)]
 
-    skill_map = {"beginner": "easy", "intermediate": "medium", "advanced": "hard"}
+    detection_analysis = _compute_detection_analysis(request.user)
+    anomaly_analysis = _anomaly_personalization_analysis(request.user)
+    next_difficulty = _next_difficulty_for_user(request.user, profile.skill_level)
+    adaptive_state, _ = AdaptiveLearningState.objects.get_or_create(
+        user=request.user,
+        defaults={"current_difficulty": _skill_base_difficulty(profile.skill_level)},
+    )
 
     return JsonResponse(
         {
             "profile": _profile_payload(profile),
-            "next_difficulty": skill_map.get(profile.skill_level, "easy"),
+            "next_difficulty": next_difficulty,
+            "detection_analysis": detection_analysis,
+            "anomaly_personalization": anomaly_analysis,
+            "adaptive_engine": {
+                "current_difficulty": adaptive_state.current_difficulty,
+                "trend_status": adaptive_state.trend_status,
+                "accuracy_delta": round(adaptive_state.accuracy_delta, 2),
+                "response_time_delta": round(adaptive_state.response_time_delta, 2),
+                "correct_streak": int(adaptive_state.correct_streak),
+                "incorrect_streak": int(adaptive_state.incorrect_streak),
+                "feedback": adaptive_state.last_feedback,
+            },
             "correct_series": correct_series,
             "recent_attempts": [
                 {
@@ -220,11 +619,14 @@ def dashboard(request):
 @require_GET
 @login_required
 def practice(request):
-    difficulty = request.GET.get("difficulty") or {
-        "beginner": "easy",
-        "intermediate": "medium",
-        "advanced": "hard",
-    }.get(request.user.userprofile.skill_level, "easy")
+    profile_skill = request.user.userprofile.skill_level
+    requested_difficulty = request.GET.get("difficulty")
+    if requested_difficulty in {"easy", "medium", "hard"}:
+        difficulty = requested_difficulty
+        assigned_by = "manual_override"
+    else:
+        difficulty = _next_difficulty_for_user(request.user, profile_skill)
+        assigned_by = "adaptive_engine"
 
     seen_ids = UserAttempt.objects.filter(user=request.user).values_list("scenario_id", flat=True)
     scenario = PhishingScenario.objects.filter(difficulty=difficulty).exclude(id__in=seen_ids).order_by("?").first()
@@ -234,7 +636,7 @@ def practice(request):
     if not scenario:
         return JsonResponse({"error": "No scenarios available"}, status=404)
 
-    return JsonResponse({"scenario": _scenario_payload(scenario), "difficulty": difficulty})
+    return JsonResponse({"scenario": _scenario_payload(scenario), "difficulty": difficulty, "assigned_by": assigned_by})
 
 
 @require_POST
@@ -252,6 +654,7 @@ def submit_practice(request):
     user_answer = answer_raw == "phishing"
     is_correct = user_answer == scenario.is_phishing
     response_time = float(request.POST.get("response_time", 30))
+    mistake_types = _mistake_types_for_attempt(scenario, user_answer, is_correct)
 
     UserAttempt.objects.create(
         user=request.user,
@@ -259,6 +662,9 @@ def submit_practice(request):
         user_answer=user_answer,
         is_correct=is_correct,
         response_time=response_time,
+        assessment_type='practice',
+        attempted_difficulty=scenario.difficulty,
+        mistake_types=mistake_types,
         confidence_score=0.7,
     )
 
@@ -270,6 +676,24 @@ def submit_practice(request):
         UserAttempt.objects.filter(user=request.user).aggregate(avg=Avg("response_time"))["avg"] or 0
     )
     _update_profile_ml(profile)
+    behavioral_record = _persist_behavioral_record(
+        request.user,
+        "practice",
+        [
+            {
+                "is_correct": is_correct,
+                "response_time": response_time,
+                "mistake_types": mistake_types,
+                "difficulty": scenario.difficulty,
+            }
+        ],
+    )
+    _refresh_recommendations(request.user, profile)
+    adaptive_state = _update_adaptive_learning_state(
+        request.user,
+        profile.skill_level,
+        latest_results=[is_correct],
+    )
 
     return JsonResponse(
         {
@@ -279,6 +703,9 @@ def submit_practice(request):
             "indicators": scenario.get_indicators(),
             "profile": _profile_payload(profile),
             "scenario": _scenario_payload(scenario),
+            "behavioral_record_id": behavioral_record.id if behavioral_record else None,
+            "adaptive_feedback": adaptive_state.last_feedback,
+            "next_difficulty": adaptive_state.current_difficulty,
         }
     )
 

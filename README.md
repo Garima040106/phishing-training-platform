@@ -14,6 +14,21 @@ PhishGuard AI adapts to each user by tracking accuracy, response time, and behav
 
 ---
 
+## Project Objectives Coverage
+
+1. Develop a phishing awareness training system using simulated email scenarios.  
+   - Implemented through scenario-based quiz and practice modules backed by `PhishingScenario` records.
+2. Analyze user responses to evaluate phishing detection capability.  
+   - Implemented through per-attempt tracking plus dashboard metrics (phishing recall, false positive/negative rates, capability score).
+3. Classify users based on performance using machine learning techniques.  
+   - Implemented using a RandomForest skill classifier (`beginner`, `intermediate`, `advanced`).
+4. Dynamically adjust scenario difficulty according to user learning progress.  
+   - Implemented via adaptive next-difficulty selection using skill level + recent performance trend.
+5. Enhance user awareness and reduce susceptibility to phishing attacks.  
+   - Implemented through immediate indicator feedback, personalized recommendations, and continuous practice workflow.
+
+---
+
 ## Core Features
 
 - Adaptive baseline + practice workflow
@@ -205,4 +220,3 @@ This is a collaborative project built iteratively with AI-assisted development a
 
 ---
 
-If you want, I can also add CI (GitHub Actions) so every push auto-runs backend checks, model sanity checks, and frontend build.

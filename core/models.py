@@ -52,11 +52,19 @@ class PhishingScenario(models.Model):
 
 
 class UserAttempt(models.Model):
+    ASSESSMENT_CHOICES = [
+        ('baseline', 'Baseline'),
+        ('practice', 'Practice'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     scenario = models.ForeignKey(PhishingScenario, on_delete=models.CASCADE)
     user_answer = models.BooleanField()  # True = Phishing, False = Legitimate
     is_correct = models.BooleanField()
     response_time = models.FloatField()  # in seconds
+    assessment_type = models.CharField(max_length=20, choices=ASSESSMENT_CHOICES, default='practice')
+    attempted_difficulty = models.CharField(max_length=20, default='easy')
+    mistake_types = models.JSONField(default=list, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     confidence_score = models.FloatField(default=0.5)
     
@@ -73,3 +81,43 @@ class TrainingRecommendation(models.Model):
     
     def __str__(self):
         return f"Recommendation for {self.user.username}: {self.weakness_type}"
+
+
+class BehavioralDatasetRecord(models.Model):
+    SOURCE_CHOICES = [
+        ('baseline', 'Baseline'),
+        ('practice', 'Practice'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    sample_count = models.IntegerField(default=0)
+    accuracy = models.FloatField(default=0.0)
+    avg_response_time = models.FloatField(default=0.0)
+    mistake_type_counts = models.JSONField(default=dict, blank=True)
+    difficulty_distribution = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Behavioral record for {self.user.username} ({self.source})"
+
+
+class AdaptiveLearningState(models.Model):
+    TREND_CHOICES = [
+        ('improving', 'Improving'),
+        ('stable', 'Stable'),
+        ('declining', 'Declining'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    current_difficulty = models.CharField(max_length=20, default='easy')
+    trend_status = models.CharField(max_length=20, choices=TREND_CHOICES, default='stable')
+    accuracy_delta = models.FloatField(default=0.0)
+    response_time_delta = models.FloatField(default=0.0)
+    correct_streak = models.IntegerField(default=0)
+    incorrect_streak = models.IntegerField(default=0)
+    last_feedback = models.TextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Adaptive state for {self.user.username}: {self.current_difficulty}/{self.trend_status}"
