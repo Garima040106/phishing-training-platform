@@ -1,0 +1,111 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Leaderboard - PhishGuard AI{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">🏆 Leaderboard</h1>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Top 10 PhishGuard AI Champions</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th style="width: 60px;">Rank</th>
+                    <th>Username</th>
+                    <th>Skill Level</th>
+                    <th>Accuracy</th>
+                    <th>Attempts</th>
+                    <th>Avg Response Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in ranked_users %}
+                <tr {% if entry.is_current %}class="table-primary" style="background-color: rgba(26, 35, 126, 0.1);"{% endif %}>
+                    <td>
+                        {% if entry.rank == 1 %}
+                            🥇 {{ entry.rank }}
+                        {% elif entry.rank == 2 %}
+                            🥈 {{ entry.rank }}
+                        {% elif entry.rank == 3 %}
+                            🥉 {{ entry.rank }}
+                        {% else %}
+                            {{ entry.rank }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        <strong>{{ entry.user.username }}</strong>
+                        {% if entry.is_current %}
+                            <span class="badge badge-primary ml-2">You</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="skill-{{ entry.profile.skill_level }}">
+                            {{ entry.profile.get_skill_level_display }}
+                        </span>
+                    </td>
+                    <td>
+                        <strong class="text-info">{{ entry.profile.accuracy|floatformat:1 }}%</strong>
+                    </td>
+                    <td>{{ entry.profile.total_attempts }}</td>
+                    <td>{{ entry.profile.avg_response_time|floatformat:1 }}s</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        No users yet. Complete your baseline assessment to appear on the leaderboard!
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="text-muted">Your Rank Position</h6>
+                <p class="h3 text-primary">
+                    {% if current_user in ranked_users %}
+                        {% for entry in ranked_users %}
+                            {% if entry.is_current %}#{{ entry.rank }}{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        Not Yet Ranked
+                    {% endif %}
+                </p>
+                <small class="text-muted">Complete your baseline assessment to get ranked</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="text-muted">Your Current Score</h6>
+                <p class="h3 text-success">{{ current_user.accuracy|floatformat:1 }}%</p>
+                <small class="text-muted">Based on {{ current_user.total_attempts }} attempts</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="mb-3">💡 Leaderboard Tips:</h6>
+                <ul class="mb-0">
+                    <li><strong>Skill Level:</strong> Increases as you improve accuracy and respond faster</li>
+                    <li><strong>Accuracy:</strong> Percentage of correct out of total attempts</li>
+                    <li><strong>Avg Response Time:</strong> Lower is better - indicates faster threat recognition</li>
+                    <li><strong>Rankings:</strong> Based on accuracy first, then response time as a tiebreaker</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

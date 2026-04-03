@@ -1,0 +1,83 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Practice - PhishGuard AI{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">🎯 Practice Scenario</h4>
+                <small class="text-white">
+                    Difficulty: 
+                    {% if difficulty == 'easy' %}
+                        <span class="badge badge-warning">Easy</span>
+                    {% elif difficulty == 'medium' %}
+                        <span class="badge badge-info">Medium</span>
+                    {% else %}
+                        <span class="badge badge-danger">Hard</span>
+                    {% endif %}
+                </small>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <strong>⏱️ Response Timer:</strong> <span id="timer">0:00</span> elapsed
+                </div>
+
+                <h5 class="mb-3">Email Scenario:</h5>
+                <div class="email-preview p-4" style="background-color: #f9f9f9; border-left: 4px solid #1a237e; border-radius: 4px; margin-bottom: 20px;">
+                    <div class="mb-3">
+                        <strong>From:</strong> {{ scenario.sender_email }}
+                    </div>
+                    <div class="mb-3">
+                        <strong>Subject:</strong> {{ scenario.subject }}
+                    </div>
+                    <hr>
+                    <div>
+                        <p>{{ scenario.body }}</p>
+                    </div>
+                </div>
+
+                <form method="post" action="{% url 'submit_practice' %}" id="practiceForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="scenario_id" value="{{ scenario.id }}">
+                    <input type="hidden" name="response_time" id="responseTime" value="0">
+
+                    <h5 class="mb-3">Your Decision:</h5>
+                    <div class="btn-group btn-group-lg btn-block mb-4" role="group">
+                        <button type="submit" name="answer" value="phishing" class="btn btn-danger">
+                            🚨 Phishing
+                        </button>
+                        <button type="submit" name="answer" value="legitimate" class="btn btn-success">
+                            ✅ Legitimate
+                        </button>
+                    </div>
+                </form>
+
+                <div class="text-center">
+                    <small class="text-muted">Your response time will be recorded for skill assessment</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const startTime = Date.now();
+    
+    // Update timer every second
+    setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        document.getElementById('timer').textContent = 
+            minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+    }, 100);
+
+    // Update response time before submit
+    document.getElementById('practiceForm').addEventListener('submit', function() {
+        const responseTime = (Date.now() - startTime) / 1000;
+        document.getElementById('responseTime').value = responseTime;
+    });
+</script>
+{% endblock %}

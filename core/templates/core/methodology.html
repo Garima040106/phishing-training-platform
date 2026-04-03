@@ -1,0 +1,226 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Methodology - PhishGuard AI{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">🔬 Methodology & Technology Stack</h1>
+
+<!-- Introduction -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="mb-3">About PhishGuard AI</h5>
+        <p>
+            PhishGuard AI is an adaptive phishing training platform that uses machine learning to provide personalized phishing awareness training. 
+            Our system adapts to your skill level and identifies your weak areas to recommend targeted training.
+        </p>
+    </div>
+</div>
+
+<!-- Core Components -->
+<div class="row mb-4">
+    <!-- Assessment Component -->
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header bg-info">
+                <h5 class="mb-0">📋 Adaptive Assessment</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>How it Works:</strong></p>
+                <ul>
+                    <li>Initial baseline quiz with 10 random scenarios</li>
+                    <li>Difficulty levels: Easy, Medium, Hard</li>
+                    <li>System adapts scenarios based on your performance</li>
+                    <li>Real-time response time tracking</li>
+                    <li>Personalized recommendations based on weaknesses</li>
+                </ul>
+                <p class="mb-0"><small class="text-muted">Your skill level is continuously updated as you practice.</small></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ML Classification -->
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header bg-success">
+                <h5 class="mb-0">🤖 Random Forest Classifier</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Algorithm Details:</strong></p>
+                <ul>
+                    <li>Model: RandomForestClassifier (100 estimators)</li>
+                    <li>Purpose: Classify user skill level</li>
+                    <li>Features Analyzed:
+                        <ul>
+                            <li>Overall accuracy percentage</li>
+                            <li>Average response time</li>
+                            <li>Total attempts</li>
+                            <li>Hard scenario accuracy</li>
+                            <li>Medium scenario accuracy</li>
+                        </ul>
+                    </li>
+                    <li>Output: Beginner → Intermediate → Advanced</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Adaptive Engine -->
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0">⚡ Adaptive Training Engine</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>How Adaptivity Works:</strong></p>
+                <ul>
+                    <li><strong>Beginner:</strong> Focuses on obvious phishing indicators (urgency, suspicious senders)</li>
+                    <li><strong>Intermediate:</strong> Increases difficulty; realistic formatting, better social engineering</li>
+                    <li><strong>Advanced:</strong> Complex scenarios with subtle indicators and sophisticated attacks</li>
+                    <li>System recommends next difficulty based on skill classification</li>
+                    <li>Recommendations target identified weaknesses</li>
+                </ul>
+                <p class="mb-0"><small class="text-muted">Your training path is customized for maximum learning impact.</small></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Anomaly Detection -->
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header bg-danger">
+                <h5 class="mb-0">🔍 Isolation Forest Anomaly Detection</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Anomaly Detection Purpose:</strong></p>
+                <ul>
+                    <li>Model: IsolationForest (contamination=0.05)</li>
+                    <li>Detects unusual user behavior patterns</li>
+                    <li>Features Monitored:
+                        <ul>
+                            <li>Accuracy trends</li>
+                            <li>Response time consistency</li>
+                            <li>Behavioral consistency</li>
+                        </ul>
+                    </li>
+                    <li>Alerts on potential account compromise</li>
+                    <li>Flagged for security review</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Technology Stack Table -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">🛠️ Technology Stack</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table mb-0">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Technology</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Backend Framework</strong></td>
+                    <td>Django 6.0</td>
+                    <td>Web application server and API</td>
+                </tr>
+                <tr>
+                    <td><strong>Database</strong></td>
+                    <td>SQLite 3</td>
+                    <td>User profiles, scenarios, and attempts</td>
+                </tr>
+                <tr>
+                    <td><strong>ML/Data Science</strong></td>
+                    <td>scikit-learn</td>
+                    <td>RandomForest & IsolationForest models</td>
+                </tr>
+                <tr>
+                    <td><strong>Data Processing</strong></td>
+                    <td>Pandas, NumPy</td>
+                    <td>Data manipulation and analysis</td>
+                </tr>
+                <tr>
+                    <td><strong>Model Persistence</strong></td>
+                    <td>Joblib</td>
+                    <td>Serialize trained ML models</td>
+                </tr>
+                <tr>
+                    <td><strong>Frontend Framework</strong></td>
+                    <td>Bootstrap 4</td>
+                    <td>Responsive UI components</td>
+                </tr>
+                <tr>
+                    <td><strong>Charting Library</strong></td>
+                    <td>Chart.js</td>
+                    <td>Performance visualization</td>
+                </tr>
+                <tr>
+                    <td><strong>Form Styling</strong></td>
+                    <td>Django Crispy Forms</td>
+                    <td>Beautiful form rendering</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Key Features -->
+<div class="row">
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">✨ Key Features</h5>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>✅ Personalized skill assessment</li>
+                    <li>✅ Adaptive difficulty progression</li>
+                    <li>✅ Real-time performance tracking</li>
+                    <li>✅ Weakness identification</li>
+                    <li>✅ Targeted recommendations</li>
+                    <li>✅ Anomaly detection</li>
+                    <li>✅ Leaderboard rankings</li>
+                    <li>✅ Response time analytics</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">🎯 Training Goals</h5>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>🎓 Develop phishing recognition skills</li>
+                    <li>🎓 Learn security best practices</li>
+                    <li>🎓 Understand social engineering tactics</li>
+                    <li>🎓 Improve response time to threats</li>
+                    <li>🎓 Identify common phishing indicators</li>
+                    <li>🎓 Practice in realistic scenarios</li>
+                    <li>🎓 Build organizational security culture</li>
+                    <li>🎓 Track progress over time</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer Note -->
+<div class="alert alert-info mt-4">
+    <h5>📚 Research & Data</h5>
+    <p class="mb-0">
+        PhishGuard AI uses carefully curated phishing and legitimate email datasets to create realistic training scenarios. 
+        Our synthetic training data and real-world email samples ensure that your training prepares you for actual phishing threats you may encounter.
+    </p>
+</div>
+{% endblock %}

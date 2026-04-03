@@ -1,0 +1,105 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Result - PhishGuard AI{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- Result Card -->
+        <div class="card mb-4">
+            <div class="card-body text-center py-5">
+                {% if is_correct %}
+                    <div style="font-size: 4rem; margin-bottom: 20px;">✅</div>
+                    <h2 class="text-success mb-3">Correct!</h2>
+                    <p class="lead">Great job! You correctly identified this email.</p>
+                {% else %}
+                    <div style="font-size: 4rem; margin-bottom: 20px;">❌</div>
+                    <h2 class="text-danger mb-3">Incorrect</h2>
+                    <p class="lead">This was a {% if scenario.is_phishing %}<strong>phishing</strong>{% else %}<strong>legitimate</strong>{% endif %} email.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Email Analysis Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">📧 Email Analysis</h5>
+            </div>
+            <div class="card-body">
+                <h6><strong>From:</strong> {{ scenario.sender_email }}</h6>
+                <h6 class="mt-2"><strong>Subject:</strong> {{ scenario.subject }}</h6>
+                <hr>
+                <p>{{ scenario.body }}</p>
+
+                {% if scenario.is_phishing %}
+                <hr>
+                <h6 class="text-danger"><strong>🚨 Phishing Indicators:</strong></h6>
+                <ul>
+                    {% for indicator in scenario.get_indicators %}
+                    <li><strong>{{ indicator|title }}:</strong> 
+                        {% if indicator == 'urgency' %}
+                            This email creates artificial urgency to make you act quickly.
+                        {% elif indicator == 'sender' %}
+                            The sender email address is suspicious or spoofed.
+                        {% elif indicator == 'links' %}
+                            Contains suspicious links that could lead to phishing sites.
+                        {% elif indicator == 'attachments' %}
+                            May contain malicious attachments or unexpected files.
+                        {% elif indicator == 'grammar' %}
+                            Contains spelling or grammar errors typical of phishing.
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="alert alert-info">
+                    <strong>✅ This is a legitimate email</strong> from a trustworthy source with proper formatting and no suspicious elements.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- User Profile Stats -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">📊 Your Profile Update</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Current Skill Level:</h6>
+                        <span class="skill-{{ profile.skill_level }}">{{ profile.get_skill_level_display }}</span>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Updated Accuracy:</h6>
+                        <h5 class="text-success">{{ accuracy }}%</h5>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Total Attempts:</h6>
+                        <h5>{{ profile.total_attempts }}</h5>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Correct Answers:</h6>
+                        <h5 class="text-info">{{ profile.correct_answers }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="card">
+            <div class="card-body text-center">
+                <a href="{% url 'practice' %}?difficulty={{ difficulty }}" class="btn btn-primary btn-lg mr-2">
+                    ⚡ Try Another {{ difficulty|title }} Scenario
+                </a>
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-lg">
+                    📊 Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

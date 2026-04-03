@@ -1,0 +1,98 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Baseline Assessment - PhishGuard AI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 offset-lg-1">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">🎯 Baseline Assessment Quiz</h3>
+                <small class="text-white">Evaluate 10 random emails to establish your baseline skill level</small>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'submit_quiz' %}" id="quizForm">
+                    {% csrf_token %}
+                    
+                    {% for scenario in scenarios %}
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <h5 class="card-title">{{ forloop.counter }}. {{ scenario.title }}</h5>
+                                
+                                <div class="email-preview p-3" style="background-color: #f9f9f9; border-left: 4px solid #1a237e; border-radius: 4px; margin: 15px 0;">
+                                    <div class="mb-2">
+                                        <strong>From:</strong> {{ scenario.sender_email }}
+                                    </div>
+                                    <div class="mb-2">
+                                        <strong>Subject:</strong> {{ scenario.subject }}
+                                    </div>
+                                    <hr>
+                                    <div>
+                                        <p>{{ scenario.body }}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label><strong>Is this email phishing or legitimate?</strong></label>
+                                <div class="custom-control custom-radio">
+                                    <input type="radio" id="phishing_{{ scenario.id }}" name="answer_{{ scenario.id }}" value="phishing" class="custom-control-input" required>
+                                    <label class="custom-control-label" for="phishing_{{ scenario.id }}">
+                                        🚨 Phishing - This is a malicious/deceptive email
+                                    </label>
+                                </div>
+                                <div class="custom-control custom-radio">
+                                    <input type="radio" id="legit_{{ scenario.id }}" name="answer_{{ scenario.id }}" value="legitimate" class="custom-control-input" required>
+                                    <label class="custom-control-label" for="legit_{{ scenario.id }}">
+                                        ✅ Legitimate - This is a genuine email
+                                    </label>
+                                </div>
+                            </div>
+                            <input type="hidden" name="time_{{ scenario.id }}" class="response_time" value="30">
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <div class="card-footer">
+                        <button type="submit" class="btn btn-primary btn-lg btn-block">Submit Assessment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card-title {
+        margin-bottom: 0;
+    }
+
+    .custom-radio {
+        margin-bottom: 10px;
+    }
+
+    .custom-control-label {
+        cursor: pointer;
+        user-select: none;
+    }
+</style>
+
+<script>
+    // Track response time for each scenario
+    const startTime = Date.now();
+    
+    document.getElementById('quizForm').addEventListener('submit', function() {
+        const currentTime = Date.now();
+        const elapsedSeconds = (currentTime - startTime) / 1000;
+        
+        // Distribute time roughly equally among scenarios
+        const timePerScenario = Math.max(5, elapsedSeconds / {{ scenarios|length }});
+        
+        // Update all time fields
+        document.querySelectorAll('.response_time').forEach(field => {
+            field.value = Math.round(timePerScenario * 10) / 10;
+        });
+    });
+</script>
+{% endblock %}
