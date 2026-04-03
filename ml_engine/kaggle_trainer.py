@@ -86,6 +86,35 @@ def _build_email_feature_frame(phishing_text, enron_text):
     return pd.concat([phishing_frame, enron_frame], ignore_index=True)
 
 
+def _build_synthetic_email_feature_frame(size=5000):
+    rng = np.random.default_rng(7)
+    phishing_frame = pd.DataFrame(
+        {
+            "urgency": rng.integers(1, 5, size=size),
+            "links": rng.integers(1, 5, size=size),
+            "attachments": rng.integers(0, 3, size=size),
+            "grammar_noise": rng.integers(1, 6, size=size),
+            "caps_ratio": rng.uniform(0.05, 0.35, size=size),
+            "length": rng.integers(100, 1400, size=size),
+            "avg_word_length": rng.uniform(4.0, 7.2, size=size),
+            "label": np.ones(size, dtype=int),
+        }
+    )
+    legit_frame = pd.DataFrame(
+        {
+            "urgency": rng.integers(0, 2, size=size),
+            "links": rng.integers(0, 2, size=size),
+            "attachments": rng.integers(0, 2, size=size),
+            "grammar_noise": rng.integers(0, 2, size=size),
+            "caps_ratio": rng.uniform(0.01, 0.08, size=size),
+            "length": rng.integers(150, 1800, size=size),
+            "avg_word_length": rng.uniform(4.2, 6.2, size=size),
+            "label": np.zeros(size, dtype=int),
+        }
+    )
+    return pd.concat([phishing_frame, legit_frame], ignore_index=True)
+
+
 def _email_quality_benchmark(email_feature_df):
     feature_cols = [c for c in email_feature_df.columns if c != "label"]
     X = email_feature_df[feature_cols]
@@ -162,7 +191,7 @@ def _generate_anomaly_data(email_feature_df, n_samples=800):
     return np.array(normal)
 
 
-def train_with_kaggle_datasets():
+def train_with_kaggle_datasets(allow_fallback=False):
     logger.info("\n" + "=" * 72)
     logger.info("🚀 PHISHGUARD AI - TRAINING WITH KAGGLE DATASETS")
     logger.info("=" * 72)
@@ -171,10 +200,26 @@ def train_with_kaggle_datasets():
     enron_df = KaggleDatasetLoader.load_enron_emails(max_rows=5000)
 
     if phishing_df is None or enron_df is None:
-        raise RuntimeError("Required Kaggle datasets are missing in datasets/ directory")
+        if not allow_fallback:
+            raise RuntimeError("Required Kaggle datasets are missing in datasets/ directory")
+        logger.warning("⚠️ Kaggle datasets unavailable. Falling back to synthetic email feature data.")
+        email_feature_df = _build_synthetic_email_feature_frame(size=5000)
+        dataset_summary = {
+            "phishing_samples": 5000,
+            "enron_samples": 5000,
+            "total_email_samples": 10000,
+            "source": "synthetic_fallback",
+        }
+    else:
+        phishing_text, enron_text = _to_text_series(phishing_df, enron_df)
+        email_feature_df = _build_email_feature_frame(phishing_text, enron_text)
+        dataset_summary = {
+            "phishing_samples": int(len(phishing_text)),
+            "enron_samples": int(len(enron_text)),
+            "total_email_samples": int(len(email_feature_df)),
+            "source": "kaggle",
+        }
 
-    phishing_text, enron_text = _to_text_series(phishing_df, enron_df)
-    email_feature_df = _build_email_feature_frame(phishing_text, enron_text)
     benchmark = _email_quality_benchmark(email_feature_df)
 
     logger.info(f"📊 Email benchmark accuracy: {benchmark['email_benchmark_accuracy']:.2%}")
@@ -205,11 +250,7 @@ def train_with_kaggle_datasets():
     joblib.dump(anomaly_model, ISO_MODEL_PATH)
 
     report = {
-        "datasets": {
-            "phishing_samples": int(len(phishing_text)),
-            "enron_samples": int(len(enron_text)),
-            "total_email_samples": int(len(email_feature_df)),
-        },
+        "datasets": dataset_summary,
         "quality_benchmark": benchmark,
         "skill_training": {
             "samples": int(len(X_skill)),
@@ -254,7 +295,7 @@ def load_or_train_models():
         logger.info("✅ Models loaded successfully")
     else:
         logger.info("🏗️ Training models with Kaggle datasets...")
-        train_with_kaggle_datasets()
+        train_with_kaggle_datasets(allow_fallback=True)
         skill_clf = joblib.load(RF_MODEL_PATH)
         anomaly_detector = joblib.load(ISO_MODEL_PATH)
     
