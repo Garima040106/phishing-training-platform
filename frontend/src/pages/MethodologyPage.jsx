@@ -1,110 +1,131 @@
 export default function MethodologyPage() {
-  const architecture = [
-    { layer: "Frontend", implementation: "React (Vite), React Router, Axios client, protected routes" },
-    { layer: "Backend", implementation: "Django views + JSON APIs with session authentication" },
-    { layer: "Database", implementation: "Django ORM models for scenarios, attempts, profile, recommendations" },
-    { layer: "ML Engine", implementation: "scikit-learn RandomForest + IsolationForest + email detector" },
+  const phaseRows = [
+    {
+      phase: "Phase 1: Baseline + Behavioral Dataset",
+      details:
+        "User registration, fixed 10-question baseline quiz, response capture (accuracy/time/mistakes/difficulty), behavioral dataset record generation.",
+    },
+    {
+      phase: "Phase 2: User Profiling (Random Forest)",
+      details:
+        "Extracted performance features feed a Random Forest classifier that labels users as beginner/intermediate/advanced and stores profile skill level.",
+    },
+    {
+      phase: "Phase 3: Adaptive Learning Engine",
+      details:
+        "Scenario difficulty is assigned from skill + trend/streak logic and continuously updated after each submission.",
+    },
+    {
+      phase: "Phase 4: Anomaly Detection + Personalization",
+      details:
+        "Isolation Forest and behavior rules detect random clicking/sudden drops/repeated weaknesses and trigger targeted training modules.",
+    },
   ];
 
-  const featureVector = [
-    "urgency",
-    "links",
-    "attachments",
-    "grammar_noise",
-    "caps_ratio",
-    "length",
-    "avg_word_length",
+  const profileFeatures = [
+    "accuracy",
+    "avg_response_time",
+    "total_attempts",
+    "hard_accuracy",
+    "medium_accuracy",
+    "false_positive_rate",
+    "false_negative_rate",
+    "baseline_accuracy",
+    "practice_accuracy",
+  ];
+
+  const anomalySignals = [
+    "Isolation Forest anomaly score",
+    "Fast-click ratio",
+    "Answer-switch rate",
+    "Recent vs previous accuracy delta",
+    "Repeated mistake-type frequency",
   ];
 
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold">PhishGuard AI Methodology</h1>
+        <h1 className="text-2xl font-bold">Methodology Documentation</h1>
         <p className="mt-3 text-sm leading-6 text-slate-700">
-          This page documents how the platform is engineered end-to-end: ingestion of phishing/legitimate email data,
-          model training, user-skill adaptation, anomaly detection, and the runtime API flow used by the React UI.
+          This document explains the final production pipeline used by PhishGuard AI for assessment,
+          skill profiling, adaptive difficulty control, anomaly detection, and personalized training.
         </p>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">1) System Architecture</h2>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="py-2 pr-4">Layer</th>
-                <th className="py-2">Implementation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {architecture.map((row) => (
-                <tr key={row.layer} className="border-b border-slate-100">
-                  <td className="py-2 pr-4 font-medium text-slate-900">{row.layer}</td>
-                  <td className="py-2 text-slate-700">{row.implementation}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">2) Data and Model Training</h2>
-        <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
-          <p>
-            Training uses two datasets: a phishing corpus and the Enron email corpus for legitimate samples.
-            Text is transformed into engineered indicators and then used to train an email detector classifier.
-          </p>
-          <p>
-            The training pipeline persists artifacts in <span className="font-semibold">ml_engine/saved_models</span>:
-            skill classifier, anomaly detector, dedicated email detector, and a structured training report.
-          </p>
-        </div>
+        <h2 className="text-lg font-semibold">1) End-to-End Pipeline</h2>
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-slate-800">Email Detector Feature Vector</p>
-          <div className="mt-2 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-            {featureVector.map((feature) => (
-              <div key={feature} className="rounded border border-slate-200 bg-white px-3 py-1.5">{feature}</div>
-            ))}
-          </div>
+          <pre className="overflow-x-auto whitespace-pre text-sm leading-6 text-slate-700">
+{`User Login/Register
+  -> Baseline Quiz (10 questions)
+  -> Capture Attempts (accuracy + time + mistake types + difficulty)
+  -> Behavioral Dataset Record
+  -> Random Forest Skill Profiling
+  -> Skill Level Stored in UserProfile
+  -> Adaptive Engine Assigns Next Difficulty
+  -> Practice Attempt Loop
+  -> Isolation Forest + Pattern Analysis
+  -> Personalized Module Recommendations
+  -> Dashboard Feedback + Continuous Improvement`}
+          </pre>
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">3) Adaptive Learning Logic</h2>
-        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
-          <li>User answers are saved as attempt records with correctness and response time.</li>
-          <li>Profile aggregates are updated: total attempts, correct answers, running average response time.</li>
-          <li>
-            The skill classifier predicts one of three levels: <span className="font-semibold">beginner</span>,{" "}
-            <span className="font-semibold">intermediate</span>, or <span className="font-semibold">advanced</span>.
-          </li>
-          <li>The anomaly detector flags unusual behavior patterns from performance consistency signals.</li>
-          <li>Recommendation logic generates targeted remediation tips from recent weak areas.</li>
-        </ol>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">4) Runtime API Flow</h2>
-        <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
-          <p>
-            The frontend authenticates with Django sessions and calls API routes under <span className="font-semibold">/api</span>.
-            Core flow endpoints include quiz fetch/submit, practice fetch/submit, dashboard telemetry, and leaderboard.
-          </p>
-          <p>
-            The email checker posts raw email text to <span className="font-semibold">POST /api/detect-email/</span>, where
-            the backend extracts features, runs the email detector, and returns label, confidence, and feature values.
-          </p>
+        <h2 className="text-lg font-semibold">2) Phase Breakdown</h2>
+        <div className="mt-4 space-y-3">
+          {phaseRows.map((row) => (
+            <div key={row.phase} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">{row.phase}</p>
+              <p className="mt-1 text-sm leading-6 text-slate-700">{row.details}</p>
+            </div>
+          ))}
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">5) Why This Design</h2>
+        <h2 className="text-lg font-semibold">3) User Profiling Features (Phase 2)</h2>
+        <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
+          {profileFeatures.map((feature) => (
+            <div key={feature} className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              {feature}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">4) Adaptive Learning Controls (Phase 3)</h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700">
-          <li>Session-based auth keeps API and web integration simple in a single Django deployment.</li>
-          <li>Feature-engineered models provide interpretable risk signals for user education.</li>
-          <li>Separate models for skill, anomaly, and email classification keep concerns isolated.</li>
-          <li>Persisted artifacts and reports support repeatable retraining and transparent quality tracking.</li>
+          <li>Base difficulty starts from skill level (beginner/easy, intermediate/medium, advanced/hard).</li>
+          <li>Trend status (`improving`, `stable`, `declining`) is computed from rolling attempt windows.</li>
+          <li>Correct and incorrect streaks push difficulty up or down.</li>
+          <li>Each submission updates feedback text and next recommended difficulty.</li>
+        </ul>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">5) Anomaly + Personalization (Phase 4)</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-700">
+          Isolation Forest is combined with behavioral rules to identify abnormal interaction patterns and generate
+          targeted training module recommendations.
+        </p>
+        <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
+          {anomalySignals.map((signal) => (
+            <div key={signal} className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              {signal}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">6) Continuous Feedback Loop</h2>
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700">
+          <li>Every baseline/practice submit updates profile metrics and adaptive state.</li>
+          <li>Recommendations are regenerated from latest behavior and weakness patterns.</li>
+          <li>Dashboard reflects capability metrics, anomaly insights, trend state, and next difficulty.</li>
+          <li>This loop repeats for each attempt to progressively reduce phishing susceptibility.</li>
         </ul>
       </section>
     </div>

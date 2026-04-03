@@ -38,7 +38,24 @@ export default function ResultPage() {
           <SkillBadge skill={state.profile.skill_level} />
           <p className="text-sm text-slate-700">Accuracy: {state.profile.accuracy}%</p>
         </div>
+        <div className="mt-3 space-y-1 text-sm text-slate-700">
+          <p>
+            Next difficulty: <span className="font-semibold capitalize">{state.next_difficulty || "easy"}</span>
+          </p>
+          {state.behavioral_record_id && (
+            <p>
+              Behavioral record created: <span className="font-semibold">#{state.behavioral_record_id}</span>
+            </p>
+          )}
+        </div>
       </div>
+
+      {state.adaptive_feedback && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-sky-900">Adaptive Feedback</h2>
+          <p className="mt-2 text-sm text-sky-800">{state.adaptive_feedback}</p>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <Link to="/practice" className="rounded-lg bg-[#1a237e] px-4 py-2 font-semibold text-white">Next Scenario</Link>

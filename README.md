@@ -1,125 +1,68 @@
 # PhishGuard AI
 
-PhishGuard AI is an adaptive phishing training platform built with Django, React, and scikit-learn.
+PhishGuard AI is an adaptive phishing-awareness training platform.
 
-It helps users learn how to identify phishing emails through baseline assessments, guided practice, personalized recommendations, and ML-based skill progression.
-
----
-
-## Why this project exists
-
-Most phishing training is static. Real users are not.
-
-PhishGuard AI adapts to each user by tracking accuracy, response time, and behavior consistency. It then adjusts difficulty and recommendations so users improve faster on the areas where they struggle.
+It uses simulated phishing scenarios, machine learning, and continuous feedback to improve each user’s detection ability over time.
 
 ---
 
-## Project Objectives Coverage
+## What this app does
 
-1. Develop a phishing awareness training system using simulated email scenarios.  
-   - Implemented through scenario-based quiz and practice modules backed by `PhishingScenario` records.
-2. Analyze user responses to evaluate phishing detection capability.  
-   - Implemented through per-attempt tracking plus dashboard metrics (phishing recall, false positive/negative rates, capability score).
-3. Classify users based on performance using machine learning techniques.  
-   - Implemented using a RandomForest skill classifier (`beginner`, `intermediate`, `advanced`).
-4. Dynamically adjust scenario difficulty according to user learning progress.  
-   - Implemented via adaptive next-difficulty selection using skill level + recent performance trend.
-5. Enhance user awareness and reduce susceptibility to phishing attacks.  
-   - Implemented through immediate indicator feedback, personalized recommendations, and continuous practice workflow.
-
----
-
-## Core Features
-
-- Adaptive baseline + practice workflow
-- Skill classification (`beginner`, `intermediate`, `advanced`)
-- Anomaly detection for suspicious behavior patterns
-- Personalized recommendation engine based on missed indicators
-- Leaderboard for engagement
-- Methodology page to explain model logic and architecture
-- Complete React frontend with protected routes
-- JSON API backend for SPA integration
+- Runs a **10-question baseline quiz** using realistic email scenarios.
+- Records **accuracy, response time, mistake types, and attempted difficulty**.
+- Builds a behavioral dataset for each user session.
+- Classifies user skill with a **Random Forest** model (`beginner`, `intermediate`, `advanced`).
+- Uses an adaptive engine to **adjust scenario difficulty dynamically**.
+- Uses **Isolation Forest + behavior rules** to detect anomalies:
+  - random clicking
+  - sudden performance drops
+  - repeated weakness patterns
+- Generates **personalized training recommendations** and targeted learning modules.
 
 ---
 
-## Tech Stack
+## Pipeline Diagram
 
-### Backend
-- Django 6
-- SQLite (default)
-- Django auth + sessions
+```mermaid
+flowchart TD
+    A[User Registration/Login] --> B[Baseline Quiz: 10 Questions]
+    B --> C[Capture Attempt Signals\naccuracy, response time, mistakes, difficulty]
+    C --> D[Behavioral Dataset Record]
 
-### Machine Learning
-- scikit-learn
-- RandomForestClassifier (skill classification)
-- IsolationForest (anomaly detection)
-- joblib (model persistence)
+    D --> E[Phase 2: Random Forest User Profiling]
+    E --> F[Skill Label\nBeginner / Intermediate / Advanced]
 
-### Frontend
-- React + Vite
-- React Router
-- Axios
-- Chart.js
-- Tailwind CSS
+    F --> G[Phase 3: Adaptive Learning Engine]
+    G --> H[Assign Next Scenario Difficulty]
+    H --> I[Practice Submission Loop]
+    I --> C
 
----
+    C --> J[Phase 4: Anomaly + Personalization]
+    J --> K[Isolation Forest + Pattern Checks\nRandom Clicking / Sudden Drop / Repeated Weakness]
+    K --> L[Targeted Module Recommendations]
 
-## Kaggle Dataset Integration
-
-This project is trained with the exact datasets below:
-
-1. Phishing Email Dataset  
-   https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
-
-2. Enron Email Dataset  
-   https://www.kaggle.com/datasets/wcukierski/enron-email-dataset
-
-### What is used from the datasets
-
-- Phishing corpus (`phishing_email.csv`) and Enron corpus (`emails.csv`) are loaded and normalized.
-- Email-level features are extracted (urgency, suspicious links, attachment signals, grammar noise, caps ratio, length, etc.).
-- A benchmark classifier is run to verify signal quality.
-- Feature distributions are used to generate realistic behavior patterns for skill + anomaly model training.
-
-A training quality report is written to:
-
-`ml_engine/saved_models/training_report.json`
-
----
-
-## Project Structure
-
-```text
-phishing-training-platform/
-├── core/
-│   ├── models.py
-│   ├── views.py
-│   ├── api_views.py
-│   ├── urls.py
-│   ├── signals.py
-│   └── templates/
-├── ml_engine/
-│   ├── kaggle_trainer.py
-│   ├── recommender.py
-│   └── saved_models/
-├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   ├── components/
-│   │   ├── context/
-│   │   └── api/
-│   └── package.json
-├── datasets/
-├── phishtrainer/
-├── manage.py
-└── requirements.txt
+    L --> M[Dashboard Feedback + Continuous Improvement]
 ```
 
 ---
 
-## Local Setup
+## Core Tech Stack
 
-### 1) Backend setup
+- **Backend:** Django 6, Django ORM, Session Auth
+- **Frontend:** React + Vite, React Router, Axios, Tailwind
+- **ML:** scikit-learn (RandomForest, IsolationForest), joblib
+- **Data:** SQLite (default), Kaggle datasets for model training
+
+---
+
+## Datasets Used
+
+- Phishing Email Dataset: https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
+- Enron Email Dataset: https://www.kaggle.com/datasets/wcukierski/enron-email-dataset
+
+---
+
+## Quick Start
 
 ```bash
 python3 -m venv phishenv
@@ -129,23 +72,19 @@ python manage.py migrate
 python manage.py seed_scenarios
 ```
 
-### 2) Frontend setup
-
 ```bash
 cd frontend
 npm install
 cd ..
 ```
 
-### 3) Run both apps
-
-Terminal A:
+Run backend:
 ```bash
 source phishenv/bin/activate
 python manage.py runserver
 ```
 
-Terminal B:
+Run frontend:
 ```bash
 cd frontend
 npm run dev
@@ -156,61 +95,24 @@ npm run dev
 
 ---
 
-## Retrain models with Kaggle data
+## Important Commands
 
-Make sure datasets are in `datasets/` and run:
-
-```bash
-source phishenv/bin/activate
-python manage.py retrain_models --kaggle
-```
-
-This updates:
-- `ml_engine/saved_models/rf_skill.pkl`
-- `ml_engine/saved_models/iso_forest.pkl`
-- `ml_engine/saved_models/training_report.json`
+- Backend checks: `python manage.py check`
+- Apply migrations: `python manage.py migrate`
+- Retrain Kaggle models: `python manage.py retrain_models --kaggle`
+- Train user profiling model: `python manage.py retrain_models --profiles`
+- Frontend build: `cd frontend && npm run build`
 
 ---
 
-## API Endpoints (React SPA)
+## Key API Endpoints
 
-- `GET  /api/csrf/`
-- `POST /api/register/`
-- `POST /api/login/`
-- `POST /api/logout/`
-- `GET  /api/me/`
-- `GET  /api/quiz/baseline/`
+- `GET /api/quiz/baseline/`
 - `POST /api/quiz/submit/`
-- `GET  /api/dashboard/`
-- `GET  /api/practice/`
+- `GET /api/practice/`
 - `POST /api/practice/submit/`
-- `GET  /api/leaderboard/`
-- `GET  /api/methodology/`
+- `GET /api/dashboard/`
 - `POST /api/detect-email/`
-
----
-
-## Quality Checks before release
-
-- `python manage.py check`
-- `python manage.py migrate`
-- `python manage.py retrain_models --kaggle`
-- `npm run build` (inside `frontend/`)
-
----
-
-## Roadmap
-
-- Add Docker + production deployment profile
-- Add pytest-based API tests
-- Add model monitoring metrics and drift checks
-- Add organization/team mode with role-based dashboards
-
----
-
-## License
-
-Educational / portfolio use.
 
 ---
 
@@ -220,3 +122,6 @@ This is a collaborative project built iteratively with AI-assisted development a
 
 ---
 
+## License
+
+Educational / portfolio use.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Line } from "react-chartjs-2";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
 import api from "../api/client";
@@ -10,6 +10,7 @@ import StatCard from "../components/StatCard";
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 export default function DashboardPage() {
+  const location = useLocation();
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -35,10 +36,19 @@ export default function DashboardPage() {
 
   if (!data) return <Loading label="Loading dashboard..." />;
 
-  const { profile, recommendations, recent_attempts, detection_analysis, next_difficulty, anomaly_personalization } = data;
+  const { profile, recommendations, recent_attempts, detection_analysis, next_difficulty, anomaly_personalization, adaptive_engine } = data;
+  const baselineSummary = location.state?.baselineSummary;
 
   return (
     <div className="space-y-6">
+      {baselineSummary && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-900">
+          <p className="font-semibold">Baseline complete.</p>
+          <p className="text-sm">Record #{baselineSummary.behavioralRecordId} created • Next difficulty: <span className="capitalize">{baselineSummary.nextDifficulty}</span></p>
+          {baselineSummary.adaptiveFeedback && <p className="mt-1 text-sm">{baselineSummary.adaptiveFeedback}</p>}
+        </div>
+      )}
+
       {profile.is_anomalous && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
           Unusual behavior pattern detected. Verify account safety.
@@ -67,6 +77,23 @@ export default function DashboardPage() {
         <p className="mt-3 text-sm text-slate-600">
           Adaptive next difficulty recommendation: <span className="font-semibold capitalize">{next_difficulty}</span> based on your recent performance trend.
         </p>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold">Adaptive Engine State (Phase 3)</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Current Difficulty" value={(adaptive_engine?.current_difficulty || next_difficulty || "easy").toUpperCase()} />
+          <StatCard label="Trend" value={(adaptive_engine?.trend_status || "stable").toUpperCase()} />
+          <StatCard label="Correct Streak" value={adaptive_engine?.correct_streak ?? 0} />
+          <StatCard label="Incorrect Streak" value={adaptive_engine?.incorrect_streak ?? 0} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <StatCard label="Accuracy Delta" value={`${adaptive_engine?.accuracy_delta ?? 0}%`} />
+          <StatCard label="Response Delta" value={`${adaptive_engine?.response_time_delta ?? 0}s`} />
+        </div>
+        {adaptive_engine?.feedback && (
+          <p className="mt-3 text-sm text-slate-600">{adaptive_engine.feedback}</p>
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

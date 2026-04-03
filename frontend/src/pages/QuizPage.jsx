@@ -29,8 +29,16 @@ export default function QuizPage() {
         body.append(`answer_${scenario.id}`, answers[scenario.id]);
         body.append(`time_${scenario.id}`, String(Math.round(elapsed * 10) / 10));
       });
-      await api.post("/quiz/submit/", body, { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
-      navigate("/dashboard");
+      const { data } = await api.post("/quiz/submit/", body, { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+      navigate("/dashboard", {
+        state: {
+          baselineSummary: {
+            behavioralRecordId: data.behavioral_record_id,
+            adaptiveFeedback: data.adaptive_feedback,
+            nextDifficulty: data.next_difficulty,
+          },
+        },
+      });
     } finally {
       setSaving(false);
     }
@@ -41,6 +49,9 @@ export default function QuizPage() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <h1 className="text-2xl font-bold">Baseline Quiz</h1>
+      <p className="text-sm text-slate-600">
+        Phase 1 assessment: complete all 10 questions to generate your behavioral profile for adaptive learning.
+      </p>
       {scenarios.map((s, idx) => (
         <div key={s.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="mb-2 text-lg font-semibold">{idx + 1}. {s.title}</p>

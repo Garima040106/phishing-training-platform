@@ -9,10 +9,11 @@ export default function PracticePage() {
   const [payload, setPayload] = useState(null);
   const [start, setStart] = useState(Date.now());
 
-  const difficulty = useMemo(() => new URLSearchParams(location.search).get("difficulty") || "easy", [location.search]);
+  const difficulty = useMemo(() => new URLSearchParams(location.search).get("difficulty"), [location.search]);
 
   useEffect(() => {
-    api.get(`/practice/?difficulty=${difficulty}`).then((res) => {
+    const endpoint = difficulty ? `/practice/?difficulty=${difficulty}` : "/practice/";
+    api.get(endpoint).then((res) => {
       setPayload(res.data);
       setStart(Date.now());
     });
@@ -38,6 +39,9 @@ export default function PracticePage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Practice • <span className="capitalize">{payload.difficulty}</span></h1>
+      <p className="text-sm text-slate-600">
+        Assigned by: <span className="font-semibold capitalize">{(payload.assigned_by || "adaptive_engine").replace("_", " ")}</span>
+      </p>
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-lg font-semibold">{scenario.title}</p>
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
