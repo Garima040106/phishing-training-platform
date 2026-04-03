@@ -13,10 +13,17 @@ export default function PracticePage() {
 
   useEffect(() => {
     const endpoint = difficulty ? `/practice/?difficulty=${difficulty}` : "/practice/";
-    api.get(endpoint).then((res) => {
-      setPayload(res.data);
-      setStart(Date.now());
-    });
+    api
+      .get(endpoint)
+      .then((res) => {
+        setPayload(res.data);
+        setStart(Date.now());
+      })
+      .catch((err) => {
+        if (err?.response?.data?.baseline_required) {
+          navigate("/quiz", { replace: true });
+        }
+      });
   }, [difficulty]);
 
   const submit = async (answer) => {
@@ -37,21 +44,45 @@ export default function PracticePage() {
   const { scenario } = payload;
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Practice • <span className="capitalize">{payload.difficulty}</span></h1>
-      <p className="text-sm text-slate-600">
-        Assigned by: <span className="font-semibold capitalize">{(payload.assigned_by || "adaptive_engine").replace("_", " ")}</span>
-      </p>
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-lg font-semibold">{scenario.title}</p>
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
-          <p><span className="font-semibold">From:</span> {scenario.sender_email}</p>
-          <p><span className="font-semibold">Subject:</span> {scenario.subject}</p>
-          <p className="mt-2 whitespace-pre-wrap">{scenario.body}</p>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold text-slate-900">
+          Practice • <span className="text-[#1a237e] capitalize">{payload.difficulty}</span>
+        </h1>
+        <p className="text-slate-600">
+          Assigned by: <span className="font-semibold capitalize text-[#1a237e]">{(payload.assigned_by || "adaptive_engine").replace("_", " ")}</span>
+        </p>
+      </div>
+
+      <div className="card-padded">
+        <p className="text-2xl font-bold text-slate-900 mb-4">{scenario.title}</p>
+        <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-5 text-sm space-y-3">
+          <div>
+            <span className="font-semibold text-slate-700">From:</span>
+            <p className="text-slate-600 font-mono mt-1">{scenario.sender_email}</p>
+          </div>
+          <div>
+            <span className="font-semibold text-slate-700">Subject:</span>
+            <p className="text-slate-600 mt-1">{scenario.subject}</p>
+          </div>
+          <div className="border-t border-slate-300 pt-3">
+            <p className="whitespace-pre-wrap text-slate-700">{scenario.body}</p>
+          </div>
         </div>
-        <div className="mt-4 flex gap-3">
-          <button onClick={() => submit("phishing")} className="rounded-lg bg-rose-600 px-4 py-2 font-semibold text-white">Phishing</button>
-          <button onClick={() => submit("legitimate")} className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white">Legitimate</button>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => submit("phishing")}
+            className="btn-danger flex-1"
+          >
+            🚨 Phishing
+          </button>
+          <button
+            onClick={() => submit("legitimate")}
+            className="btn-success flex-1"
+          >
+            ✓ Legitimate
+          </button>
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Avg
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -36,6 +37,14 @@ def _scenario_payload(scenario):
         "body": scenario.body,
         "difficulty": scenario.difficulty,
     }
+
+
+def _baseline_attempts_count(user):
+    return UserAttempt.objects.filter(user=user, assessment_type="baseline").count()
+
+
+def _baseline_completed(user):
+    return _baseline_attempts_count(user) >= 10
 
 
 def _baseline_scenarios():
@@ -165,14 +174,14 @@ def _anomaly_personalization_analysis(user):
         if ordered[index].user_answer != ordered[index - 1].user_answer:
             switches += 1
     answer_switch_rate = switches / max(len(ordered) - 1, 1)
-    random_clicking = len(attempts) >= 8 and fast_click_ratio >= 0.5 and answer_switch_rate >= 0.65
+    random_clicking = len(attempts) >= 10 and fast_click_ratio >= 0.6 and answer_switch_rate >= 0.7
 
     midpoint = max(len(attempts) // 2, 1)
     recent = attempts[:midpoint]
     previous = attempts[midpoint:]
     recent_accuracy = sum(1 for item in recent if item.is_correct) / max(len(recent), 1)
     previous_accuracy = sum(1 for item in previous if item.is_correct) / max(len(previous), 1)
-    sudden_drop = len(previous) >= 3 and (previous_accuracy - recent_accuracy) >= 0.25
+    sudden_drop = len(recent) >= 4 and len(previous) >= 4 and (previous_accuracy - recent_accuracy) >= 0.3
 
     weakness_counter = Counter()
     for item in attempts:
@@ -190,7 +199,10 @@ def _anomaly_personalization_analysis(user):
     consistency_score = max(0.0, min(1.0, 1.0 - (2 * variance)))
 
     skill_accuracy = user.userprofile.accuracy() / 100.0
-    isolation_anomaly = bool(detect_anomaly(skill_accuracy, user.userprofile.avg_response_time, consistency_score))
+    if len(attempts) < 12:
+        isolation_anomaly = False
+    else:
+        isolation_anomaly = bool(detect_anomaly(skill_accuracy, user.userprofile.avg_response_time, consistency_score))
 
     recommended_modules = []
     seen_modules = set()
@@ -396,13 +408,21 @@ def _update_profile_ml(profile):
     profile.skill_level = skill_label
 
     anomaly_analysis = _anomaly_personalization_analysis(profile.user)
-    profile.is_anomalous = bool(
-        anomaly_analysis["isolation_anomaly"]
-        or anomaly_analysis["random_clicking"]
-        or anomaly_analysis["sudden_drop"]
-    )
+    anomaly_signal_count = int(anomaly_analysis["isolation_anomaly"]) + int(anomaly_analysis["random_clicking"]) + int(anomaly_analysis["sudden_drop"])
+    enough_history = profile.total_attempts >= 10
+    profile.is_anomalous = bool(enough_history and anomaly_signal_count >= 2)
     profile.save()
     return confidence
+
+
+def _refresh_anomaly_flag(profile):
+    anomaly_analysis = _anomaly_personalization_analysis(profile.user)
+    anomaly_signal_count = int(anomaly_analysis["isolation_anomaly"]) + int(anomaly_analysis["random_clicking"]) + int(anomaly_analysis["sudden_drop"])
+    enough_history = profile.total_attempts >= 10
+    fresh_flag = bool(enough_history and anomaly_signal_count >= 2)
+    if profile.is_anomalous != fresh_flag:
+        profile.is_anomalous = fresh_flag
+        profile.save(update_fields=["is_anomalous", "last_updated"])
 
 
 def _profile_payload(profile):
@@ -461,6 +481,32 @@ def logout_view(request):
     return JsonResponse({"ok": True})
 
 
+@require_POST
+@login_required
+def reset_progress(request):
+    with transaction.atomic():
+        UserAttempt.objects.filter(user=request.user).delete()
+        BehavioralDatasetRecord.objects.filter(user=request.user).delete()
+        TrainingRecommendation.objects.filter(user=request.user).delete()
+        AdaptiveLearningState.objects.filter(user=request.user).delete()
+
+        profile = request.user.userprofile
+        profile.skill_level = "beginner"
+        profile.total_attempts = 0
+        profile.correct_answers = 0
+        profile.avg_response_time = 0.0
+        profile.is_anomalous = False
+        profile.save()
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "message": "Progress reset successfully. Start with the 10-question baseline quiz.",
+            "baseline_required": True,
+        }
+    )
+
+
 @require_GET
 @login_required
 def me(request):
@@ -469,6 +515,8 @@ def me(request):
         {
             "id": request.user.id,
             "username": request.user.username,
+            "baseline_attempts": _baseline_attempts_count(request.user),
+            "baseline_completed": _baseline_completed(request.user),
             "profile": _profile_payload(profile),
         }
     )
@@ -477,18 +525,30 @@ def me(request):
 @require_GET
 @login_required
 def baseline_quiz(request):
+    if _baseline_completed(request.user):
+        return JsonResponse(
+            {
+                "completed": True,
+                "message": "Baseline already completed. Continue with adaptive practice.",
+            }
+        )
     scenarios = _baseline_scenarios()
     if len(scenarios) < 10:
         return JsonResponse({"error": "At least 10 scenarios are required for baseline quiz."}, status=400)
-    return JsonResponse({"scenarios": [_scenario_payload(s) for s in scenarios]})
+    return JsonResponse({"completed": False, "scenarios": [_scenario_payload(s) for s in scenarios]})
 
 
 @require_POST
 @login_required
 def submit_quiz(request):
+    if _baseline_completed(request.user):
+        return JsonResponse({"error": "Baseline quiz already completed."}, status=400)
+
     scenario_ids = request.POST.getlist("scenario_ids[]")
     if not scenario_ids:
         return JsonResponse({"error": "No scenarios submitted"}, status=400)
+    if len(scenario_ids) != 10:
+        return JsonResponse({"error": "Baseline must include exactly 10 scenarios."}, status=400)
 
     scenarios = list(PhishingScenario.objects.filter(id__in=scenario_ids))
     attempts = []
@@ -530,8 +590,8 @@ def submit_quiz(request):
             }
         )
 
-    if not attempts:
-        return JsonResponse({"error": "No valid answers submitted"}, status=400)
+    if len(attempts) != 10:
+        return JsonResponse({"error": "Answer all 10 baseline scenarios before submitting."}, status=400)
 
     UserAttempt.objects.bulk_create(attempts)
 
@@ -566,6 +626,7 @@ def submit_quiz(request):
 @login_required
 def dashboard(request):
     profile = request.user.userprofile
+    _refresh_anomaly_flag(profile)
     recent_attempts = UserAttempt.objects.filter(user=request.user).order_by("-timestamp")[:10]
     recommendations = list(
         TrainingRecommendation.objects.filter(user=request.user, is_read=False).values(
@@ -587,6 +648,8 @@ def dashboard(request):
     return JsonResponse(
         {
             "profile": _profile_payload(profile),
+            "baseline_attempts": _baseline_attempts_count(request.user),
+            "baseline_completed": _baseline_completed(request.user),
             "next_difficulty": next_difficulty,
             "detection_analysis": detection_analysis,
             "anomaly_personalization": anomaly_analysis,
@@ -619,6 +682,15 @@ def dashboard(request):
 @require_GET
 @login_required
 def practice(request):
+    if not _baseline_completed(request.user):
+        return JsonResponse(
+            {
+                "error": "Complete the 10-question baseline quiz first.",
+                "baseline_required": True,
+            },
+            status=400,
+        )
+
     profile_skill = request.user.userprofile.skill_level
     requested_difficulty = request.GET.get("difficulty")
     if requested_difficulty in {"easy", "medium", "hard"}:
@@ -642,6 +714,15 @@ def practice(request):
 @require_POST
 @login_required
 def submit_practice(request):
+    if not _baseline_completed(request.user):
+        return JsonResponse(
+            {
+                "error": "Complete the 10-question baseline quiz first.",
+                "baseline_required": True,
+            },
+            status=400,
+        )
+
     scenario_id = request.POST.get("scenario_id")
     answer_raw = request.POST.get("answer")
     if not scenario_id or answer_raw not in {"phishing", "legitimate"}:

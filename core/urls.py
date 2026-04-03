@@ -23,6 +23,7 @@ urlpatterns = [
     path('api/register/', api_views.register, name='api_register'),
     path('api/login/', api_views.login_view, name='api_login'),
     path('api/logout/', api_views.logout_view, name='api_logout'),
+    path('api/progress/reset/', api_views.reset_progress, name='api_progress_reset'),
     path('api/me/', api_views.me, name='api_me'),
     path('api/quiz/baseline/', api_views.baseline_quiz, name='api_baseline_quiz'),
     path('api/quiz/submit/', api_views.submit_quiz, name='api_submit_quiz'),
