@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [v2.0.4] - 2026-04-03
+
+### Added
+- Email authenticity checker flow:
+  - Backend endpoint: `POST /api/detect-email/`
+  - ML inference helper for direct email classification
+  - React page and navigation route for authenticated users
+- Collaboration note in `README.md` clarifying project development style.
+
+### Changed
+- Methodology page redesigned into documentation-style technical walkthrough.
+- `README.md` updated endpoint list to include `/api/detect-email/`.
+
+### Verification
+- `python manage.py check` passes
+- `python manage.py migrate` up-to-date
+- `frontend` builds successfully with `npm run build`
+
 ## [v2.0.0] - 2026-04-03
 
 ### Added

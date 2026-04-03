@@ -171,6 +171,7 @@ This updates:
 - `POST /api/practice/submit/`
 - `GET  /api/leaderboard/`
 - `GET  /api/methodology/`
+- `POST /api/detect-email/`
 
 ---
 
@@ -195,6 +196,12 @@ This updates:
 ## License
 
 Educational / portfolio use.
+
+---
+
+## Collaboration
+
+This is a collaborative project built iteratively with AI-assisted development and human guidance.
 
 ---
 
