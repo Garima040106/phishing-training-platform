@@ -9,7 +9,7 @@ from django.db.models import Q
 import time
 
 from .models import UserProfile, PhishingScenario, UserAttempt, TrainingRecommendation
-from ml_engine.classifier import classify_user_skill, detect_anomaly
+from ml_engine.kaggle_trainer import classify_user_skill, detect_anomaly
 from ml_engine.recommender import get_recommendations
 
 
