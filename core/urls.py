@@ -31,4 +31,5 @@ urlpatterns = [
     path('api/practice/submit/', api_views.submit_practice, name='api_submit_practice'),
     path('api/leaderboard/', api_views.leaderboard, name='api_leaderboard'),
     path('api/methodology/', api_views.methodology, name='api_methodology'),
+    path('api/detect-email/', api_views.detect_email, name='api_detect_email'),
 ]

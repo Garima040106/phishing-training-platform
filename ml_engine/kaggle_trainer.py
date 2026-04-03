@@ -28,6 +28,7 @@ DATASETS_DIR = BASE_DIR.parent / "datasets"
 
 RF_MODEL_PATH = MODEL_DIR / "rf_skill.pkl"
 ISO_MODEL_PATH = MODEL_DIR / "iso_forest.pkl"
+EMAIL_DETECTOR_PATH = MODEL_DIR / "rf_email_detector.pkl"
 TRAINING_REPORT_PATH = MODEL_DIR / "training_report.json"
 
 
@@ -115,21 +116,29 @@ def _build_synthetic_email_feature_frame(size=5000):
     return pd.concat([phishing_frame, legit_frame], ignore_index=True)
 
 
-def _email_quality_benchmark(email_feature_df):
+def _train_email_detector(email_feature_df):
     feature_cols = [c for c in email_feature_df.columns if c != "label"]
     X = email_feature_df[feature_cols]
     y = email_feature_df["label"]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
-    detector = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+    detector = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=20,
+        min_samples_split=4,
+        min_samples_leaf=2,
+        random_state=42,
+        n_jobs=-1,
+    )
     detector.fit(X_train, y_train)
     y_pred = detector.predict(X_test)
-    return {
+    metrics = {
         "email_benchmark_accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
         "email_benchmark_f1": round(float(f1_score(y_test, y_pred)), 4),
         "samples": int(len(email_feature_df)),
     }
+    return detector, metrics
 
 
 def _generate_skill_data(email_feature_df, per_class=150):
@@ -220,7 +229,7 @@ def train_with_kaggle_datasets(allow_fallback=False):
             "source": "kaggle",
         }
 
-    benchmark = _email_quality_benchmark(email_feature_df)
+    email_detector, benchmark = _train_email_detector(email_feature_df)
 
     logger.info(f"📊 Email benchmark accuracy: {benchmark['email_benchmark_accuracy']:.2%}")
     logger.info(f"📊 Email benchmark F1: {benchmark['email_benchmark_f1']:.2%}")
@@ -248,6 +257,7 @@ def train_with_kaggle_datasets(allow_fallback=False):
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(skill_model, RF_MODEL_PATH)
     joblib.dump(anomaly_model, ISO_MODEL_PATH)
+    joblib.dump(email_detector, EMAIL_DETECTOR_PATH)
 
     report = {
         "datasets": dataset_summary,
@@ -270,6 +280,7 @@ def train_with_kaggle_datasets(allow_fallback=False):
         "artifacts": {
             "rf_model": str(RF_MODEL_PATH),
             "iso_model": str(ISO_MODEL_PATH),
+            "email_detector_model": str(EMAIL_DETECTOR_PATH),
         },
     }
 
@@ -277,6 +288,7 @@ def train_with_kaggle_datasets(allow_fallback=False):
 
     logger.info(f"✅ Skill model saved: {RF_MODEL_PATH}")
     logger.info(f"✅ Anomaly model saved: {ISO_MODEL_PATH}")
+    logger.info(f"✅ Email detector saved: {EMAIL_DETECTOR_PATH}")
     logger.info(f"✅ Training report saved: {TRAINING_REPORT_PATH}")
 
     return report
@@ -305,6 +317,7 @@ def load_or_train_models():
 # Global instances
 _skill_classifier = None
 _anomaly_detector = None
+_email_detector = None
 
 
 def get_models():
@@ -313,6 +326,15 @@ def get_models():
     if _skill_classifier is None or _anomaly_detector is None:
         _skill_classifier, _anomaly_detector = load_or_train_models()
     return _skill_classifier, _anomaly_detector
+
+
+def get_email_detector():
+    global _email_detector
+    if _email_detector is None:
+        if not EMAIL_DETECTOR_PATH.exists():
+            train_with_kaggle_datasets(allow_fallback=True)
+        _email_detector = joblib.load(EMAIL_DETECTOR_PATH)
+    return _email_detector
 
 
 def classify_user_skill(accuracy, avg_response_time, total_attempts, hard_acc, medium_acc):
@@ -335,6 +357,34 @@ def detect_anomaly(accuracy, avg_response_time, consistency_score):
     prediction = anomaly_detector.predict(X)[0]
     
     return prediction == -1
+
+
+def predict_email_phishing(email_text):
+    detector = get_email_detector()
+    features = _extract_email_features(email_text)
+    feature_vector = pd.DataFrame(
+        [
+            {
+                "urgency": features["urgency"],
+                "links": features["links"],
+                "attachments": features["attachments"],
+                "grammar_noise": features["grammar_noise"],
+                "caps_ratio": features["caps_ratio"],
+                "length": features["length"],
+                "avg_word_length": features["avg_word_length"],
+            }
+        ]
+    )
+
+    prediction = int(detector.predict(feature_vector)[0])
+    confidence = float(max(detector.predict_proba(feature_vector)[0]))
+    label = "phishing" if prediction == 1 else "legitimate"
+    return {
+        "label": label,
+        "is_phishing": prediction == 1,
+        "confidence": round(confidence, 4),
+        "features": features,
+    }
 
 
 if __name__ == "__main__":

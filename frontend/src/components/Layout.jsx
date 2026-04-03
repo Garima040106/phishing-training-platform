@@ -21,6 +21,7 @@ export default function Layout({ children }) {
                 <NavLink to="/dashboard" className="hover:opacity-90">Dashboard</NavLink>
                 <NavLink to="/quiz" className="hover:opacity-90">Quiz</NavLink>
                 <NavLink to="/practice" className="hover:opacity-90">Practice</NavLink>
+                <NavLink to="/email-check" className="hover:opacity-90">Email Check</NavLink>
                 <NavLink to="/leaderboard" className="hover:opacity-90">Leaderboard</NavLink>
                 <NavLink to="/methodology" className="hover:opacity-90">Methodology</NavLink>
                 <button onClick={onLogout} className="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20">Logout</button>

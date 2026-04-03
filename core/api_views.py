@@ -9,7 +9,7 @@ from django.views.decorators.http import require_GET, require_POST
 from pathlib import Path
 
 from .models import PhishingScenario, TrainingRecommendation, UserAttempt
-from ml_engine.kaggle_trainer import classify_user_skill, detect_anomaly
+from ml_engine.kaggle_trainer import classify_user_skill, detect_anomaly, predict_email_phishing
 from ml_engine.recommender import get_recommendations
 
 
@@ -337,6 +337,17 @@ def methodology(request):
         {"layer": "Frontend", "tech": "React + Tailwind + Chart.js"},
     ]
     return JsonResponse({"cards": cards, "stack": stack})
+
+
+@require_POST
+@login_required
+def detect_email(request):
+    email_text = (request.POST.get("email_text") or "").strip()
+    if len(email_text) < 20:
+        return JsonResponse({"error": "Please provide a longer email body for analysis."}, status=400)
+
+    result = predict_email_phishing(email_text)
+    return JsonResponse({"ok": True, "result": result})
 
 
 @require_GET

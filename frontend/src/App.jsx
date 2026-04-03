@@ -10,6 +10,7 @@ import PracticePage from "./pages/PracticePage";
 import QuizPage from "./pages/QuizPage";
 import RegisterPage from "./pages/RegisterPage";
 import ResultPage from "./pages/ResultPage";
+import EmailCheckPage from "./pages/EmailCheckPage";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -26,6 +27,7 @@ export default function App() {
       <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
       <Route path="/quiz" element={<Protected><QuizPage /></Protected>} />
       <Route path="/practice" element={<Protected><PracticePage /></Protected>} />
+      <Route path="/email-check" element={<Protected><EmailCheckPage /></Protected>} />
       <Route path="/result" element={<Protected><ResultPage /></Protected>} />
       <Route path="/leaderboard" element={<Protected><LeaderboardPage /></Protected>} />
       <Route path="/methodology" element={<Protected><MethodologyPage /></Protected>} />
