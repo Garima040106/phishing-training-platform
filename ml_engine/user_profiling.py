@@ -209,7 +209,7 @@ def _load_profile_model():
     return joblib.load(PROFILE_MODEL_PATH)
 
 
-def classify_user_with_profile_model(user):
+def classify_user_with_profile_model(user, retrain_threshold=None):
     model = _load_profile_model()
     if model is None:
         training_info = train_user_profile_classifier()

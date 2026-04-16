@@ -23,39 +23,26 @@ RECOMMENDATION_MAP = {
 
 
 def get_recommendations(user_profile, recent_attempts):
-    """
-    Analyze user attempts and generate recommendations.
-    
-    Args:
-        user_profile: UserProfile instance
-        recent_attempts: List of UserAttempt objects
-    
-    Returns:
-        List of recommendation dicts with 'weakness' and 'tip' keys
-    """
+    """Return up to three personalized training recommendations."""
     recommendations = []
     weakness_count = {}
-    
-    # Analyze recent attempts
+
     for attempt in recent_attempts:
         if not attempt.is_correct and attempt.scenario.is_phishing:
-            # User missed phishing - analyze indicators
             indicators = attempt.scenario.get_indicators()
             for indicator in indicators:
                 weakness_count[indicator] = weakness_count.get(indicator, 0) + 1
-    
-    # Get top 3 weaknesses
+
     sorted_weaknesses = sorted(weakness_count.items(), key=lambda x: x[1], reverse=True)[:3]
-    
-    for weakness, count in sorted_weaknesses:
+
+    for weakness, _ in sorted_weaknesses:
         if weakness in RECOMMENDATION_MAP:
             rec_data = RECOMMENDATION_MAP[weakness]
             recommendations.append({
                 'weakness': rec_data['title'],
                 'tip': rec_data['tip']
             })
-    
-    # Add default recommendations if not enough
+
     used_keys = set(w[0] for w in sorted_weaknesses)
     for key in RECOMMENDATION_MAP:
         if key not in used_keys and len(recommendations) < 3:
@@ -64,8 +51,7 @@ def get_recommendations(user_profile, recent_attempts):
                 'weakness': rec_data['title'],
                 'tip': rec_data['tip']
             })
-    
-    # Add anomaly warning if needed
+
     if user_profile.is_anomalous:
         recommendations.insert(0, {
             'weakness': '⚠️ Anomalous Behavior Detected',

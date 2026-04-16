@@ -1,5 +1,6 @@
 phishenv/
 __pycache__/
+**pycache**/
 *.pyc
 *.pyo
 *.pyd
@@ -15,6 +16,7 @@ staticfiles/
 .vscode/
 .idea/
 *.egg-info/
+node_modules/
 dist/
 build/
 .pytest_cache/
