@@ -5,6 +5,15 @@ PhishGuard AI is an adaptive phishing training platform that uses machine learni
 
 ## Quick Start (60 seconds)
 
+### 0. Configure Environment Secret
+```bash
+cp .env.example .env
+```
+
+Add this line to `.env`:
+
+DJANGO_SECRET_KEY=replace-with-a-random-secret
+
 ### 1. Start the Server
 ```bash
 source phishenv/bin/activate

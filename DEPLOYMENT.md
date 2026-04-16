@@ -1,5 +1,11 @@
 # PhishGuard AI - Deployment Log
 
+## Environment Variables (Required)
+
+Set this variable in your deployment environment before starting the app:
+
+DJANGO_SECRET_KEY=your-unique-production-secret
+
 ## Deployment Date
 April 3, 2026
 

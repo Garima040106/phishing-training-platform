@@ -30,7 +30,7 @@ All notable changes to this project are documented in this file.
   - Practice + result flow
   - Leaderboard + methodology pages
   - Protected routes and shared layout/components
-- Django JSON API endpoints in `core/api_views.py`:
+- Django JSON API endpoints (now in `core/views.py`, with a compatibility shim in `core/api_views.py`):
   - `/api/csrf/`, `/api/register/`, `/api/login/`, `/api/logout/`, `/api/me/`
   - `/api/quiz/baseline/`, `/api/quiz/submit/`
   - `/api/dashboard/`, `/api/practice/`, `/api/practice/submit/`

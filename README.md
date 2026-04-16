@@ -1,76 +1,83 @@
-# PhishGuard AI
+# Phishing Training Platform
 
-PhishGuard AI is an adaptive phishing-awareness training platform.
+A full-stack phishing awareness training app built with Django and React.
 
-It uses simulated phishing scenarios, machine learning, and continuous feedback to improve each user’s detection ability over time.
+Users complete quiz and practice scenarios, receive performance feedback, and get adaptive difficulty based on behavioral and model-driven signals.
 
----
+## Project Overview
 
-## What this app does
+This project combines:
 
-- Runs a **10-question baseline quiz** using realistic email scenarios.
-- Records **accuracy, response time, mistake types, and attempted difficulty**.
-- Builds a behavioral dataset for each user session.
-- Classifies user skill with a **Random Forest** model (`beginner`, `intermediate`, `advanced`).
-- Uses an adaptive engine to **adjust scenario difficulty dynamically**.
-- Uses **Isolation Forest + behavior rules** to detect anomalies:
-  - random clicking
-  - sudden performance drops
-  - repeated weakness patterns
-- Generates **personalized training recommendations** and targeted learning modules.
+- A Django backend with JWT-based API endpoints
+- A React frontend for learner flows and dashboards
+- A machine learning layer for user profiling and anomaly detection
 
----
+Core flow:
 
-## Pipeline Diagram
+1. User takes a baseline quiz.
+2. The system records behavior (accuracy, response patterns, and timing).
+3. Models classify user skill and flag suspicious or low-quality attempt behavior.
+4. Practice recommendations and difficulty are adjusted over time.
 
-```mermaid
-flowchart TD
-    A[User Registration/Login] --> B[Baseline Quiz: 10 Questions]
-    B --> C[Capture Attempt Signals\naccuracy, response time, mistakes, difficulty]
-    C --> D[Behavioral Dataset Record]
+## Tech Stack
 
-    D --> E[Phase 2: Random Forest User Profiling]
-    E --> F[Skill Label\nBeginner / Intermediate / Advanced]
+- Backend: Django, Django REST Framework, SimpleJWT
+- Frontend: React, Vite, Axios, Tailwind CSS
+- ML/Data: scikit-learn, pandas, numpy, joblib
+- Database: SQLite (default)
+- Training data: Kaggle phishing/email datasets stored under `datasets/`
 
-    F --> G[Phase 3: Adaptive Learning Engine]
-    G --> H[Assign Next Scenario Difficulty]
-    H --> I[Practice Submission Loop]
-    I --> C
+## Repository Structure
 
-    C --> J[Phase 4: Anomaly + Personalization]
-    J --> K[Isolation Forest + Pattern Checks\nRandom Clicking / Sudden Drop / Repeated Weakness]
-    K --> L[Targeted Module Recommendations]
+- `core/`: app models, API/web views, serializers, management commands
+- `ml_engine/`: model training, inference, profiling, recommendation logic
+- `phishtrainer/`: Django project settings and URL routing
+- `frontend/`: React client
+- `datasets/`: local datasets used for model training
 
-    L --> M[Dashboard Feedback + Continuous Improvement]
-```
+## Prerequisites
 
----
+- Python 3.12+
+- Node.js 18+
+- npm
 
-## Core Tech Stack
+## Setup
 
-- **Backend:** Django 6, Django ORM, Session Auth
-- **Frontend:** React + Vite, React Router, Axios, Tailwind
-- **ML:** scikit-learn (RandomForest, IsolationForest), joblib
-- **Data:** SQLite (default), Kaggle datasets for model training
-
----
-
-## Datasets Used
-
-- Phishing Email Dataset: https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
-- Enron Email Dataset: https://www.kaggle.com/datasets/wcukierski/enron-email-dataset
-
----
-
-## Quick Start
+### 1) Clone and create Python environment
 
 ```bash
+git clone <your-repo-url>
+cd phishing-training-platform
 python3 -m venv phishenv
 source phishenv/bin/activate
 pip install -r requirements.txt
+```
+
+### 2) Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Set this required value in `.env`:
+
+```env
+DJANGO_SECRET_KEY=replace-with-a-long-random-secret
+```
+
+Notes:
+
+- `DJANGO_SECRET_KEY` is required. The app will not start without it.
+- Frontend environment variables are not required for local development with the current Vite proxy setup.
+
+### 3) Initialize database and seed scenarios
+
+```bash
 python manage.py migrate
 python manage.py seed_scenarios
 ```
+
+### 4) Install frontend dependencies
 
 ```bash
 cd frontend
@@ -78,35 +85,41 @@ npm install
 cd ..
 ```
 
-Run backend:
+## Running the App
+
+Run backend (terminal 1):
+
 ```bash
 source phishenv/bin/activate
 python manage.py runserver
 ```
 
-Run frontend:
+Run frontend (terminal 2):
+
 ```bash
 cd frontend
 npm run dev
 ```
 
+Local URLs:
+
 - Backend: http://127.0.0.1:8000
 - Frontend: http://127.0.0.1:5173
 
----
+## Useful Commands
 
-## Important Commands
-
-- Backend checks: `python manage.py check`
-- Apply migrations: `python manage.py migrate`
-- Retrain Kaggle models: `python manage.py retrain_models --kaggle`
-- Train user profiling model: `python manage.py retrain_models --profiles`
+- Django system check: `python manage.py check`
+- Run tests: `python manage.py test`
+- Retrain email/anomaly models: `python manage.py retrain_models --kaggle`
+- Retrain user profiling model: `python manage.py retrain_models --profiles`
 - Frontend build: `cd frontend && npm run build`
+- Frontend lint: `cd frontend && npm run lint`
 
----
+## API Snapshot
 
-## Key API Endpoints
-
+- `POST /api/register/`
+- `POST /api/login/`
+- `GET /api/me/`
 - `GET /api/quiz/baseline/`
 - `POST /api/quiz/submit/`
 - `GET /api/practice/`
@@ -114,14 +127,11 @@ npm run dev
 - `GET /api/dashboard/`
 - `POST /api/detect-email/`
 
----
+## Datasets
 
-## Collaboration
-
-This is a collaborative project built iteratively with AI-assisted development and human guidance.
-
----
+- https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
+- https://www.kaggle.com/datasets/wcukierski/enron-email-dataset
 
 ## License
 
-Educational / portfolio use.
+Educational/portfolio use.
