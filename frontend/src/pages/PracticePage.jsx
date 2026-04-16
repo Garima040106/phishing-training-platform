@@ -7,7 +7,7 @@ export default function PracticePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [payload, setPayload] = useState(null);
-  const [start, setStart] = useState(Date.now());
+  const [start, setStart] = useState(() => Date.now());
 
   const difficulty = useMemo(() => new URLSearchParams(location.search).get("difficulty"), [location.search]);
 
@@ -24,7 +24,7 @@ export default function PracticePage() {
           navigate("/quiz", { replace: true });
         }
       });
-  }, [difficulty]);
+  }, [difficulty, navigate]);
 
   const submit = async (answer) => {
     if (!payload?.scenario) return;

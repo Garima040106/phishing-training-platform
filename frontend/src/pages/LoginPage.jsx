@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,7 +17,8 @@ export default function LoginPage() {
     try {
       const body = new URLSearchParams(form);
       await login(body);
-      navigate("/dashboard");
+      const to = location.state?.from?.pathname || "/dashboard";
+      navigate(to, { replace: true });
     } catch {
       setError("Invalid credentials");
     } finally {

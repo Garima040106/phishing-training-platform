@@ -1,9 +1,15 @@
-export default function StatCard({ label, value, hint }) {
+import React from "react";
+import { motion } from "framer-motion";
+
+const MotionDiv = motion.div;
+
+const StatCard = ({ title, children }) => {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
-      {hint && <p className="mt-2 text-xs text-slate-500">{hint}</p>}
-    </div>
+    <MotionDiv whileHover={{ scale: 1.05 }} className="bg-white p-6 rounded-lg shadow-md">
+      <h3 className="mb-2 text-lg font-medium text-gray-600">{title}</h3>
+      {children}
+    </MotionDiv>
   );
-}
+};
+
+export default StatCard;

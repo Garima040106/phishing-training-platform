@@ -1,14 +1,35 @@
-const styles = {
-  beginner: "bg-amber-100 text-amber-700 border-amber-200",
-  intermediate: "bg-blue-100 text-blue-700 border-blue-200",
-  advanced: "bg-emerald-100 text-emerald-700 border-emerald-200",
+import React from "react";
+
+const SkillBadge = ({ skill, confidence }) => {
+  const label = String(skill || "unknown");
+  const normalized = label.toLowerCase();
+
+  const pct =
+    confidence == null
+      ? null
+      : Number(confidence) <= 1
+        ? Math.round(Number(confidence) * 100)
+        : Math.round(Number(confidence));
+
+  const color = (() => {
+    switch (normalized) {
+      case "beginner":
+        return "bg-red-500";
+      case "intermediate":
+        return "bg-yellow-500 text-slate-900";
+      case "advanced":
+        return "bg-green-500";
+      default:
+        return "bg-slate-500";
+    }
+  })();
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold ${color}`}>
+      <span className="capitalize">{label}</span>
+      {pct == null ? null : <span className="opacity-90">{pct}%</span>}
+    </div>
+  );
 };
 
-export default function SkillBadge({ skill }) {
-  const color = styles[skill] || styles.beginner;
-  return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${color}`}>
-      {skill?.toUpperCase()}
-    </span>
-  );
-}
+export default SkillBadge;

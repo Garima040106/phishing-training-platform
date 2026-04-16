@@ -1,360 +1,210 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Line } from "react-chartjs-2";
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from "chart.js";
-import api, { initCsrf } from "../api/client";
+import { motion } from "framer-motion";
+import ReactCountUp from "react-countup";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import api from "../api/client";
 import Loading from "../components/Loading";
 import SkillBadge from "../components/SkillBadge";
 import StatCard from "../components/StatCard";
-import { useAuth } from "../context/AuthContext";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+const MotionDiv = motion.div;
+const MotionButton = motion.button;
+const CountUp = ReactCountUp?.default ?? ReactCountUp;
 
 export default function DashboardPage() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { refreshUser } = useAuth();
   const [data, setData] = useState(null);
-  const [resetting, setResetting] = useState(false);
-  const [baselineScenarios, setBaselineScenarios] = useState([]);
-  const [baselineAnswers, setBaselineAnswers] = useState({});
-  const [baselineSaving, setBaselineSaving] = useState(false);
-  const [baselineStart, setBaselineStart] = useState(Date.now());
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [selectedModule, setSelectedModule] = useState(null);
 
   useEffect(() => {
-    const load = async () => {
-      const { data: dashboardData } = await api.get("/dashboard/");
-      setData(dashboardData);
-
-      if (!dashboardData.baseline_completed) {
-        const { data: baselineData } = await api.get("/quiz/baseline/");
-        if (!baselineData.completed) {
-          setBaselineScenarios(baselineData.scenarios || []);
-          setBaselineAnswers({});
-          setBaselineStart(Date.now());
-        }
-      } else {
-        setBaselineScenarios([]);
+    let alive = true;
+    const run = async () => {
+      try {
+        const res = await api.get("/dashboard/");
+        if (!alive) return;
+        setData(res.data);
+        setSelectedModule(null);
+      } catch (err) {
+        if (!alive) return;
+        setError(err?.response?.status === 401 ? "Please sign in to view your dashboard." : "Failed to load dashboard.");
+      } finally {
+        if (alive) setLoading(false);
       }
     };
-
-    load();
+    run();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const chartData = useMemo(() => {
-    const series = data?.correct_series || [];
-    return {
-      labels: series.map((_, i) => `#${i + 1}`),
-      datasets: [
-        {
-          label: "Correct",
-          data: series,
-          borderColor: "#1a237e",
-          backgroundColor: "rgba(26,35,126,0.18)",
-          tension: 0.35,
-          fill: true,
-        },
-      ],
-    };
+  const trend = useMemo(() => {
+    const values = data?.recent_accuracy_trend || [];
+    return values.map((accuracy, idx) => ({
+      name: `S${idx + 1}`,
+      accuracy: Number(accuracy),
+    }));
   }, [data]);
 
-  if (!data) return <Loading label="Loading dashboard..." />;
+  if (loading) return <Loading label="Loading dashboard…" />;
+  if (error) return <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-800">{error}</div>;
+  if (!data) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+        No dashboard data received. Try refreshing.
+      </div>
+    );
+  }
 
-  const baselineAllAnswered = baselineScenarios.length === 10 && baselineScenarios.every((scenario) => baselineAnswers[scenario.id]);
+  const confidencePct =
+    Number(data.confidence_score) <= 1
+      ? Math.round(Number(data.confidence_score) * 100)
+      : Math.round(Number(data.confidence_score));
 
-  const onSubmitBaseline = async (event) => {
-    event.preventDefault();
-    if (!baselineAllAnswered) return;
-
-    setBaselineSaving(true);
-    try {
-      await initCsrf();
-      const elapsed = Math.max(5, (Date.now() - baselineStart) / 1000 / baselineScenarios.length);
-      const body = new URLSearchParams();
-      baselineScenarios.forEach((scenario) => {
-        body.append("scenario_ids[]", String(scenario.id));
-        body.append(`answer_${scenario.id}`, baselineAnswers[scenario.id]);
-        body.append(`time_${scenario.id}`, String(Math.round(elapsed * 10) / 10));
-      });
-
-      const { data: submitData } = await api.post("/quiz/submit/", body, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      });
-
-      await refreshUser();
-      const { data: refreshedDashboard } = await api.get("/dashboard/");
-      setData(refreshedDashboard);
-      setBaselineScenarios([]);
-      setBaselineAnswers({});
-
-      navigate("/dashboard", {
-        replace: true,
-        state: {
-          baselineSummary: {
-            behavioralRecordId: submitData.behavioral_record_id,
-            adaptiveFeedback: submitData.adaptive_feedback,
-            nextDifficulty: submitData.next_difficulty,
-          },
-        },
-      });
-    } finally {
-      setBaselineSaving(false);
-    }
-  };
-
-  const onResetProgress = async () => {
-    const confirmed = window.confirm("Reset all progress and restart baseline on this dashboard?");
-    if (!confirmed) return;
-
-    setResetting(true);
-    try {
-      await initCsrf();
-      await api.post("/progress/reset/");
-      await refreshUser();
-      const { data: dashboardData } = await api.get("/dashboard/");
-      setData(dashboardData);
-      const { data: baselineData } = await api.get("/quiz/baseline/");
-      setBaselineScenarios(baselineData.scenarios || []);
-      setBaselineAnswers({});
-      setBaselineStart(Date.now());
-      navigate("/dashboard", { replace: true });
-    } finally {
-      setResetting(false);
-    }
-  };
-
-  const { profile, recommendations, recent_attempts, detection_analysis, next_difficulty, anomaly_personalization, adaptive_engine } = data;
-  const baselineSummary = location.state?.baselineSummary;
+  const modules = Array.isArray(data.recommended_modules) ? data.recommended_modules : [];
 
   return (
-    <div className="space-y-8">
-      {baselineSummary && (
-        <div className="rounded-2xl border-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-emerald-100 p-6 text-emerald-900 shadow-md">
-          <p className="text-lg font-bold">✓ Baseline Complete</p>
-          <p className="mt-2 text-sm">Record #{baselineSummary.behavioralRecordId} created • Next difficulty: <span className="capitalize font-semibold">{baselineSummary.nextDifficulty}</span></p>
-          {baselineSummary.adaptiveFeedback && <p className="mt-2 text-sm">{baselineSummary.adaptiveFeedback}</p>}
+    <MotionDiv
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="space-y-8"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-600">Your training progress and adaptive insights.</p>
         </div>
-      )}
+      </div>
 
-      {profile.is_anomalous && (
-        <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-amber-100 p-6 text-amber-900 shadow-md">
-          <p className="font-bold">⚠ Unusual Behavior Pattern Detected</p>
-          <p className="mt-1 text-sm">Please verify your account safety.</p>
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <StatCard title="Total attempts">
+          <div className="text-4xl font-extrabold text-slate-900">
+            <CountUp end={Number(data.total_attempts || 0)} duration={1.6} />
+          </div>
+          <div className="mt-1 text-sm text-slate-500">Practice + baseline attempts recorded</div>
+        </StatCard>
 
-      {!data.baseline_completed && baselineScenarios.length > 0 && (
-        <form onSubmit={onSubmitBaseline} className="card-padded border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-white">
-          <h2 className="text-2xl font-bold text-slate-900">Initial Baseline Quiz (10 Scenarios)</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Complete this baseline to start adaptive difficulty and personalized training.
-          </p>
-
-          <div className="mt-5 space-y-4">
-            {baselineScenarios.map((scenario, idx) => (
-              <div key={scenario.id} className="rounded-lg border border-slate-200 bg-white p-4">
-                <p className="text-lg font-semibold text-slate-900">Q{idx + 1}. {scenario.title}</p>
-                <div className="mt-2 text-sm text-slate-700">
-                  <p><span className="font-semibold">From:</span> {scenario.sender_email}</p>
-                  <p><span className="font-semibold">Subject:</span> {scenario.subject}</p>
-                  <p className="mt-2 whitespace-pre-wrap">{scenario.body}</p>
-                </div>
-                <div className="mt-3 flex gap-6 text-sm">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name={`baseline-${scenario.id}`}
-                      value="phishing"
-                      checked={baselineAnswers[scenario.id] === "phishing"}
-                      onChange={(e) => setBaselineAnswers((prev) => ({ ...prev, [scenario.id]: e.target.value }))}
-                    />
-                    Phishing
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name={`baseline-${scenario.id}`}
-                      value="legitimate"
-                      checked={baselineAnswers[scenario.id] === "legitimate"}
-                      onChange={(e) => setBaselineAnswers((prev) => ({ ...prev, [scenario.id]: e.target.value }))}
-                    />
-                    Legitimate
-                  </label>
-                </div>
+        <MotionDiv
+          whileHover={{ y: -2 }}
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-600">Skill level</div>
+              <div className="mt-2">
+                <SkillBadge skill={data.skill_label} confidence={confidencePct} />
               </div>
-            ))}
+            </div>
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-right">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Confidence</div>
+              <div className="text-lg font-extrabold text-slate-900">{confidencePct}%</div>
+            </div>
           </div>
+        </MotionDiv>
 
-          <button disabled={!baselineAllAnswered || baselineSaving} className="btn-primary mt-5">
-            {baselineSaving ? "Submitting Baseline..." : `Submit Baseline (${Object.keys(baselineAnswers).length}/10)`}
-          </button>
-        </form>
-      )}
-
-      <div className="space-y-2">
-        <h2 className="text-3xl font-bold text-slate-900">Performance Dashboard</h2>
-        <p className="text-slate-600">Track your learning progress and adaptive recommendations</p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Accuracy" value={`${profile.accuracy}%`} />
-        <StatCard label="Attempts" value={profile.total_attempts} />
-        <StatCard label="Avg Response" value={`${profile.avg_response_time}s`} />
-        <div className="card-padded group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-          <div className="relative">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Skill Level</p>
-            <div className="mt-3"><SkillBadge skill={profile.skill_level} /></div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card-padded">
-        <h2 className="mb-6 text-2xl font-bold text-slate-900">Detection Capability Analysis</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard label="Capability Score" value={`${detection_analysis?.capability_score ?? 0}%`} />
-          <StatCard label="Phishing Recall" value={`${detection_analysis?.phishing_recall ?? 0}%`} />
-          <StatCard label="Legitimate Accuracy" value={`${detection_analysis?.legitimate_accuracy ?? 0}%`} />
-          <StatCard label="False Positive Rate" value={`${detection_analysis?.false_positive_rate ?? 0}%`} />
-          <StatCard label="False Negative Rate" value={`${detection_analysis?.false_negative_rate ?? 0}%`} />
-        </div>
-        <p className="mt-6 text-sm text-slate-600 bg-sky-50 rounded-lg p-3 border border-sky-200">
-          <span className="font-semibold text-sky-900">Adaptive Recommendation:</span> Next difficulty should be <span className="font-semibold capitalize text-sky-900">{next_difficulty}</span> based on your recent performance trend.
-        </p>
-      </div>
-
-      <div className="card-padded">
-        <h2 className="mb-6 text-2xl font-bold text-slate-900">Adaptive Engine State (Phase 3)</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Current Difficulty" value={(adaptive_engine?.current_difficulty || next_difficulty || "easy").toUpperCase()} />
-          <StatCard label="Trend" value={(adaptive_engine?.trend_status || "stable").toUpperCase()} />
-          <StatCard label="Correct Streak" value={adaptive_engine?.correct_streak ?? 0} />
-          <StatCard label="Incorrect Streak" value={adaptive_engine?.incorrect_streak ?? 0} />
-        </div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <StatCard label="Accuracy Delta" value={`${adaptive_engine?.accuracy_delta ?? 0}%`} />
-          <StatCard label="Response Delta" value={`${adaptive_engine?.response_time_delta ?? 0}s`} />
-        </div>
-        {adaptive_engine?.feedback && (
-          <p className="mt-6 text-sm text-slate-600 bg-indigo-50 rounded-lg p-3 border border-indigo-200">{adaptive_engine.feedback}</p>
+        {data.anomaly_flag ? (
+          <MotionDiv
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm"
+          >
+            <div className="text-sm font-extrabold text-amber-900">Anomaly warning</div>
+            <div className="mt-2 text-sm text-amber-900/90">{data.anomaly_reason || "An unusual behavior pattern was detected."}</div>
+            <div className="mt-3 text-xs text-amber-900/70">Tip: slow down and re-check sender + links before answering.</div>
+          </MotionDiv>
+        ) : (
+          <MotionDiv whileHover={{ y: -2 }} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">All clear</div>
+            <div className="mt-2 text-sm text-slate-600">No anomaly signals detected in your recent sessions.</div>
+          </MotionDiv>
         )}
       </div>
 
-      <div className="card-padded">
-        <h2 className="mb-6 text-2xl font-bold text-slate-900">Anomaly Detection & Personalization</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Random Clicking" value={anomaly_personalization?.random_clicking ? "Detected" : "No"} />
-          <StatCard label="Sudden Drop" value={anomaly_personalization?.sudden_drop ? "Detected" : "No"} />
-          <StatCard label="Fast Click Ratio" value={`${anomaly_personalization?.fast_click_ratio ?? 0}%`} />
-          <StatCard label="Switch Rate" value={`${anomaly_personalization?.answer_switch_rate ?? 0}%`} />
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div className="card rounded-lg p-4 bg-slate-50">
-            <p className="font-bold text-slate-800">Repeated Weakness Patterns</p>
-            {anomaly_personalization?.repeated_weaknesses?.length ? (
-              <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                {anomaly_personalization.repeated_weaknesses.map((item) => (
-                  <li key={item.type} className="flex items-center gap-2">
-                    <span className="inline-block w-2 h-2 bg-rose-500 rounded-full"></span>
-                    {item.type} ({item.count})
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-3 text-sm text-slate-600">No repeated weakness pattern detected.</p>
-            )}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <MotionDiv
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-extrabold text-slate-900">Accuracy trend (last 5)</h2>
+            <div className="text-xs font-semibold text-slate-500">% accuracy</div>
           </div>
-          <div className="card rounded-lg p-4 bg-slate-50">
-            <p className="font-bold text-slate-800">Targeted Training Modules</p>
-            {anomaly_personalization?.recommended_modules?.length ? (
-              <ul className="mt-3 space-y-3 text-sm text-slate-700">
-                {anomaly_personalization.recommended_modules.map((item) => (
-                  <li key={item.module}>
-                    <p className="font-semibold text-slate-800">{item.module}</p>
-                    <p className="text-xs text-slate-600 mt-1">{item.reason}</p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-3 text-sm text-slate-600">No targeted module needed right now.</p>
-            )}
+          <div className="mt-4 h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#64748b" />
+                <YAxis stroke="#64748b" domain={[0, 100]} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: 12,
+                    borderColor: "#e2e8f0",
+                  }}
+                  formatter={(value) => [`${Number(value).toFixed(1)}%`, "Accuracy"]}
+                />
+                <Line type="monotone" dataKey="accuracy" stroke="#1a237e" strokeWidth={3} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
-        </div>
-      </div>
+        </MotionDiv>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="card-padded lg:col-span-2">
-          <h2 className="mb-6 text-2xl font-bold text-slate-900">Performance Trend</h2>
-          <Line data={chartData} options={{ responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 1 } } }} />
-        </div>
-        <div className="card-padded">
-          <h2 className="mb-6 text-2xl font-bold text-slate-900">Recommendations</h2>
-          <div className="space-y-3">
-            {recommendations.length === 0 && <p className="text-sm text-slate-500">No recommendations yet.</p>}
-            {recommendations.map((rec) => (
-              <div key={rec.id} className="rounded-lg border-l-4 border-amber-400 bg-amber-50 p-4">
-                <p className="font-semibold text-amber-900">{rec.weakness_type}</p>
-                <p className="mt-1 text-xs text-amber-800">{rec.recommendation}</p>
-              </div>
-            ))}
+        <MotionDiv
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-extrabold text-slate-900">Recommended training modules</h2>
+            <div className="text-xs text-slate-500">Tap a card to view the reason</div>
           </div>
-        </div>
-      </div>
 
-      <div className="card-padded">
-        <h2 className="mb-6 text-2xl font-bold text-slate-900">Quick Practice</h2>
-        <div className="flex flex-wrap gap-3">
-          <Link className="btn-success" to="/practice?difficulty=easy">Easy</Link>
-          <Link className="btn-primary" to="/practice?difficulty=medium">Medium</Link>
-          <Link className="btn-danger" to="/practice?difficulty=hard">Hard</Link>
-          <button
-            onClick={onResetProgress}
-            disabled={resetting}
-            className="btn-secondary"
-          >
-            {resetting ? "Resetting..." : "Reset Progress"}
-          </button>
-        </div>
-      </div>
-
-      <div className="card-padded">
-        <h2 className="mb-6 text-2xl font-bold text-slate-900">Recent Attempts</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-slate-300 text-left">
-                <th className="px-4 py-3 font-semibold text-slate-700">Title</th>
-                <th className="px-4 py-3 font-semibold text-slate-700">Difficulty</th>
-                <th className="px-4 py-3 font-semibold text-slate-700">Result</th>
-                <th className="px-4 py-3 font-semibold text-slate-700">Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent_attempts.map((a) => (
-                <tr key={a.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors duration-150">
-                  <td className="px-4 py-3">{a.title}</td>
-                  <td className="px-4 py-3 capitalize">
-                    <span className={`badge-base ${
-                      a.difficulty === 'easy' ? 'bg-emerald-100 text-emerald-800' :
-                      a.difficulty === 'medium' ? 'bg-blue-100 text-blue-800' :
-                      'bg-rose-100 text-rose-800'
-                    }`}>
-                      {a.difficulty}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`badge-base ${a.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                      {a.is_correct ? "✓ Correct" : "✗ Wrong"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono">{a.response_time}s</td>
-                </tr>
+          {modules.length ? (
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {modules.map((m, idx) => (
+                <MotionButton
+                  key={`${m.module}-${idx}`}
+                  type="button"
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setSelectedModule(m)}
+                  className="group text-left rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 p-4 shadow-sm transition"
+                >
+                  <div className="text-sm font-extrabold text-slate-900 group-hover:text-[#1a237e]">{m.module}</div>
+                  <div className="mt-1 line-clamp-2 text-sm text-slate-600">{m.reason}</div>
+                </MotionButton>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+              No modules yet — complete more sessions to unlock adaptive recommendations.
+            </div>
+          )}
+
+          {selectedModule ? (
+            <MotionDiv
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"
+            >
+              <div className="text-sm font-extrabold text-indigo-900">{selectedModule.module}</div>
+              <div className="mt-1 text-sm text-indigo-900/80">{selectedModule.reason}</div>
+            </MotionDiv>
+          ) : null}
+        </MotionDiv>
       </div>
-    </div>
+    </MotionDiv>
   );
 }

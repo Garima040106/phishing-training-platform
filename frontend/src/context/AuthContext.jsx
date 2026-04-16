@@ -1,5 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import api, { initCsrf } from "../api/client";
+/* eslint-disable react-refresh/only-export-components */
+
+import { createContext, useContext, useEffect, useState } from "react";
+import api, { clearAuthTokens, getAccessToken, setAuthTokens } from "../api/client";
 
 const AuthContext = createContext(null);
 
@@ -11,16 +13,22 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get("/me/");
       setUser(data);
-    } catch {
+      return data;
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        clearAuthTokens();
+      }
       setUser(null);
+      return null;
     }
   };
 
   useEffect(() => {
     const boot = async () => {
       try {
-        await initCsrf();
-        await refreshUser();
+        if (getAccessToken()) {
+          await refreshUser();
+        }
       } finally {
         setLoading(false);
       }
@@ -29,31 +37,49 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (payload) => {
-    await initCsrf();
-    await api.post("/login/", payload, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    const { data } = await api.post("/login/", payload, {
+      headers:
+        payload instanceof URLSearchParams
+          ? { "Content-Type": "application/x-www-form-urlencoded" }
+          : undefined,
     });
+    if (data?.tokens) setAuthTokens(data.tokens);
     await refreshUser();
+    return data;
   };
 
   const register = async (payload) => {
-    await initCsrf();
-    await api.post("/register/", payload, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    const { data } = await api.post("/register/", payload, {
+      headers:
+        payload instanceof URLSearchParams
+          ? { "Content-Type": "application/x-www-form-urlencoded" }
+          : undefined,
     });
+    if (data?.tokens) setAuthTokens(data.tokens);
     await refreshUser();
+    return data;
   };
 
   const logout = async () => {
-    await initCsrf();
-    await api.post("/logout/");
-    setUser(null);
+    try {
+      await api.post("/logout/");
+    } catch {
+      // ignore
+    } finally {
+      clearAuthTokens();
+      setUser(null);
+    }
   };
 
-  const value = useMemo(
-    () => ({ user, loading, login, register, logout, refreshUser }),
-    [user, loading]
-  );
+  const value = {
+    user,
+    loading,
+    isAuthenticated: Boolean(user),
+    login,
+    register,
+    logout,
+    refreshUser,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

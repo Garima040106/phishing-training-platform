@@ -1,102 +1,88 @@
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+
 import { useAuth } from "../context/AuthContext";
-import { useState } from "react";
 
-export default function Layout({ children }) {
-  const { user, logout } = useAuth();
+const MotionDiv = motion.div;
+
+export default function Layout() {
+  const location = useLocation();
   const navigate = useNavigate();
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  const onLogout = async () => {
-    try {
-      setIsLoggingOut(true);
-      await logout();
-      navigate("/login");
-    } catch (error) {
-      console.error("Logout failed:", error);
-      // Even if logout API fails, clear user and redirect
-      navigate("/login");
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
+  const { user, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-gradient-to-r from-[#1a237e] via-[#2d3fabf2] to-[#3a4fc6] shadow-lg">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <Link
-            to="/dashboard"
-            className="text-xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent hover:scale-105 transition-transform duration-200"
-          >
-            PhishGuard AI
-          </Link>
-          <nav className="flex items-center gap-1 text-sm">
-            {user && (
-              <>
-                <NavLink
-                  to="/dashboard"
-                  className={({ isActive }) => `px-3 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-white/20 text-white font-semibold border-b-2 border-white"
-                      : "text-white/80 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  Dashboard
-                </NavLink>
-                <NavLink
-                  to="/practice"
-                  className={({ isActive }) => `px-3 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-white/20 text-white font-semibold border-b-2 border-white"
-                      : "text-white/80 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  Practice
-                </NavLink>
-                <NavLink
-                  to="/email-check"
-                  className={({ isActive }) => `px-3 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-white/20 text-white font-semibold border-b-2 border-white"
-                      : "text-white/80 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  Email Check
-                </NavLink>
-                <NavLink
-                  to="/leaderboard"
-                  className={({ isActive }) => `px-3 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-white/20 text-white font-semibold border-b-2 border-white"
-                      : "text-white/80 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  Leaderboard
-                </NavLink>
-                <NavLink
-                  to="/methodology"
-                  className={({ isActive }) => `px-3 py-2 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-white/20 text-white font-semibold border-b-2 border-white"
-                      : "text-white/80 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  Methodology
-                </NavLink>
-                <button
-                  onClick={onLogout}
-                  disabled={isLoggingOut}
-                  className="ml-2 px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-rose-600 text-white font-semibold hover:shadow-lg hover:scale-105 disabled:opacity-60 disabled:scale-100 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500"
-                >
-                  {isLoggingOut ? "Logging out..." : "Logout"}
-                </button>
-              </>
-            )}
-          </nav>
+    <div className="min-h-screen bg-slate-100">
+      <nav className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-6">
+            <Link to="/dashboard" className="text-lg font-extrabold tracking-tight text-slate-900">
+              PhishGuard AI
+            </Link>
+            <div className="hidden items-center gap-1 sm:flex">
+              <Link
+                to="/dashboard"
+                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${
+                  location.pathname.startsWith("/dashboard")
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Dashboard
+              </Link>
+              <Link
+                to="/practice"
+                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${
+                  location.pathname.startsWith("/practice") || location.pathname.startsWith("/quiz")
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Practice
+              </Link>
+              <Link
+                to="/leaderboard"
+                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${
+                  location.pathname.startsWith("/leaderboard")
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Leaderboard
+              </Link>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {user ? (
+              <div className="hidden sm:block text-sm font-semibold text-slate-700">@{user.username}</div>
+            ) : null}
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                navigate("/login", { replace: true });
+              }}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-extrabold text-slate-900 shadow-sm hover:bg-slate-50"
+            >
+              Logout
+            </button>
+          </div>
         </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
+      </nav>
+
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <AnimatePresence mode="wait">
+          <MotionDiv
+            key={location.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            <Outlet />
+          </MotionDiv>
+        </AnimatePresence>
+      </main>
     </div>
   );
 }
