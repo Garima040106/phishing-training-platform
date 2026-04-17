@@ -10,13 +10,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+DEBUG = _env_bool("DEBUG", default=True)
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
-    raise ImproperlyConfigured("DJANGO_SECRET_KEY environment variable is required")
+    # Keep local/dev + CI checks usable without forcing a committed .env.
+    if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true" or DEBUG:
+        SECRET_KEY = "dev-ci-insecure-secret-key"
+    else:
+        raise ImproperlyConfigured("Set DJANGO_SECRET_KEY or SECRET_KEY environment variable")
 
-DEBUG = True
-
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'testserver']
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
+    if host.strip()
+]
 
 
 INSTALLED_APPS = [
