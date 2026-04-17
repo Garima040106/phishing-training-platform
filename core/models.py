@@ -46,6 +46,13 @@ class PhishingScenario(models.Model):
     def get_indicators(self):
         """Returns list of phishing indicators"""
         return [ind.strip() for ind in self.phishing_indicators.split(',') if ind.strip()]
+
+    def get_display_body(self, max_chars=500):
+        """Returns a trimmed body preview for UI rendering."""
+        text = (self.body or "").strip()
+        if len(text) <= max_chars:
+            return text
+        return f"{text[:max_chars].rstrip()}..."
     
     def __str__(self):
         return f"{self.title} ({self.difficulty})"

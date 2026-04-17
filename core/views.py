@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import timedelta
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -8,7 +10,7 @@ from xml.sax.saxutils import escape as xml_escape
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Avg
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
@@ -41,10 +43,33 @@ from .models import (
     PhishingScenario,
     TrainingRecommendation,
     UserAttempt,
+    UserProfile,
 )
 
 
 DIFFICULTY_LEVELS = ("easy", "medium", "hard")
+DIFFICULTY_TO_SKILL_LABEL = {
+    "easy": "beginner",
+    "medium": "intermediate",
+    "hard": "advanced",
+}
+
+REPORT_DATASET_SOURCES = [
+    "kaggle.com/datasets/naserabdullahalam/phishing-email-dataset",
+    "kaggle.com/datasets/wcukierski/enron-email-dataset",
+]
+
+# Backward-compatible aliases used by seeding/training code in older revisions.
+REPORT_DATASET_SOURCE_ALIASES = {
+    "kaggle-phishing-email-dataset",
+    "kaggle-enron-email-dataset",
+    "naserabdullahalam/phishing-email-dataset",
+    "wcukierski/enron-email-dataset",
+    "kaggle.com/datasets/naserabdullahalam/phishing-email-dataset",
+    "kaggle.com/datasets/wcukierski/enron-email-dataset",
+    "shivamb/phishing-email-dataset",
+    "kaggle.com/datasets/shivamb/phishing-email-dataset",
+}
 
 
 def _base_difficulty(skill_level: str) -> str:
@@ -64,6 +89,261 @@ def _difficulty_index(level: str) -> int:
 
 def _clamp_difficulty(index: int) -> str:
     return DIFFICULTY_LEVELS[max(0, min(len(DIFFICULTY_LEVELS) - 1, index))]
+
+
+def _difficulty_to_skill_label(difficulty: str) -> str:
+    return DIFFICULTY_TO_SKILL_LABEL.get((difficulty or "").lower(), "beginner")
+
+
+@lru_cache(maxsize=1)
+def _phishing_scenario_columns() -> set[str]:
+    with connection.cursor() as cursor:
+        description = connection.introspection.get_table_description(cursor, PhishingScenario._meta.db_table)
+    return {col.name for col in description}
+
+
+@lru_cache(maxsize=1)
+def _allowed_report_scenario_ids():
+    if "source_dataset" not in _phishing_scenario_columns():
+        return None
+
+    table_name = PhishingScenario._meta.db_table
+    source_values = tuple(sorted(REPORT_DATASET_SOURCE_ALIASES))
+    placeholders = ",".join(["%s"] * len(source_values))
+    query = f"SELECT id FROM {table_name} WHERE source_dataset IN ({placeholders})"
+
+    with connection.cursor() as cursor:
+        cursor.execute(query, source_values)
+        rows = cursor.fetchall()
+    return {int(row[0]) for row in rows}
+
+
+def _dataset_scoped_attempts(user, *, assessment_type: str | None = None):
+    attempts = UserAttempt.objects.filter(user=user)
+    if assessment_type:
+        attempts = attempts.filter(assessment_type=assessment_type)
+
+    allowed_ids = _allowed_report_scenario_ids()
+    if allowed_ids is not None:
+        if not allowed_ids:
+            return []
+        attempts = attempts.filter(scenario_id__in=allowed_ids)
+
+    return list(attempts.select_related("scenario").order_by("timestamp"))
+
+
+def _report_attempts(user):
+    practice_attempts = _dataset_scoped_attempts(user, assessment_type="practice")
+    if practice_attempts:
+        return practice_attempts
+    return _dataset_scoped_attempts(user)
+
+
+def _sessionize_attempts(attempts, *, gap_minutes: int = 20):
+    sessions = []
+    current_session = []
+
+    for attempt in attempts:
+        if not current_session:
+            current_session.append(attempt)
+            continue
+
+        previous_attempt = current_session[-1]
+        if (attempt.timestamp - previous_attempt.timestamp) > timedelta(minutes=gap_minutes):
+            sessions.append(current_session)
+            current_session = [attempt]
+        else:
+            current_session.append(attempt)
+
+    if current_session:
+        sessions.append(current_session)
+
+    return sessions
+
+
+def _dominant_session_difficulty_label(session_attempts):
+    counter = Counter()
+    for attempt in session_attempts:
+        attempt_difficulty = (attempt.attempted_difficulty or attempt.scenario.difficulty or "easy").lower()
+        counter.update([attempt_difficulty if attempt_difficulty in DIFFICULTY_LEVELS else "easy"])
+
+    dominant = counter.most_common(1)[0][0] if counter else "easy"
+    return _difficulty_to_skill_label(dominant)
+
+
+def _weakness_categories_for_attempt(attempt):
+    categories = set()
+
+    for raw_type in attempt.mistake_types or []:
+        token = str(raw_type or "").strip().lower()
+        if not token:
+            continue
+
+        if token == "false_positive":
+            categories.add("false_positive")
+        elif token == "over_suspicious":
+            categories.add("over_suspicious")
+
+        if token == "urgency" or "urgent" in token:
+            categories.add("urgency")
+
+        if token in {"links", "url", "url_tricks", "suspicious_links"} or "url" in token or "link" in token:
+            categories.add("url_tricks")
+
+    return categories
+
+
+def _build_report_stats(user):
+    attempts = _report_attempts(user)
+    sessions = _sessionize_attempts(attempts, gap_minutes=20)
+
+    skill_distribution = {
+        "beginner": 0,
+        "intermediate": 0,
+        "advanced": 0,
+    }
+    anomaly_breakdown = {
+        "random_clicking": 0,
+        "sudden_drop": 0,
+        "repeated_weakness": 0,
+    }
+    weakness_categories = {
+        "urgency": 0,
+        "false_positive": 0,
+        "over_suspicious": 0,
+        "url_tricks": 0,
+    }
+
+    response_time_buckets = {
+        "beginner": [],
+        "intermediate": [],
+        "advanced": [],
+    }
+    for attempt in attempts:
+        difficulty_label = _difficulty_to_skill_label(attempt.attempted_difficulty or attempt.scenario.difficulty)
+        response_time_buckets[difficulty_label].append(float(attempt.response_time))
+
+    weakness_counter = Counter()
+    for attempt in attempts:
+        weakness_counter.update(attempt.mistake_types or [])
+    repeated_weakness_types = {key for key, count in weakness_counter.items() if count >= 2}
+
+    accuracy_over_sessions = []
+    difficulty_progression = []
+    trend_rows = []
+    anomaly_rows = []
+    previous_session_accuracy = None
+
+    for session_index, session_attempts in enumerate(sessions, start=1):
+        session_total = len(session_attempts)
+        session_correct = sum(1 for item in session_attempts if item.is_correct)
+        session_accuracy = session_correct / max(session_total, 1)
+
+        difficulty_label = _dominant_session_difficulty_label(session_attempts)
+        skill_distribution[difficulty_label] += 1
+
+        accuracy_over_sessions.append(
+            {
+                "session": session_index,
+                "accuracy": round(float(session_accuracy), 4),
+            }
+        )
+        difficulty_progression.append(
+            {
+                "session": session_index,
+                "difficulty": difficulty_label,
+            }
+        )
+
+        random_clicking = False
+        for idx in range(1, len(session_attempts)):
+            current = session_attempts[idx]
+            previous = session_attempts[idx - 1]
+            if current.response_time <= 3.5 and current.user_answer != previous.user_answer:
+                random_clicking = True
+                break
+
+        sudden_drop = bool(
+            previous_session_accuracy is not None and (previous_session_accuracy - session_accuracy) >= 0.3
+        )
+        previous_session_accuracy = session_accuracy
+
+        repeated_weakness = any(
+            (attempt.mistake_types and any(item in repeated_weakness_types for item in attempt.mistake_types))
+            for attempt in session_attempts
+        )
+
+        reasons = []
+        if random_clicking:
+            anomaly_breakdown["random_clicking"] += 1
+            reasons.append("random clicking")
+        if sudden_drop:
+            anomaly_breakdown["sudden_drop"] += 1
+            reasons.append("sudden drop")
+        if repeated_weakness:
+            anomaly_breakdown["repeated_weakness"] += 1
+            reasons.append("repeated weakness")
+
+        anomaly_flagged = bool(reasons)
+        trend_rows.append(
+            {
+                "session_number": session_index,
+                "accuracy_pct": round(float(session_accuracy) * 100.0, 2),
+                "difficulty": difficulty_label,
+                "anomaly_flagged": anomaly_flagged,
+            }
+        )
+
+        if anomaly_flagged:
+            anomaly_rows.append(
+                {
+                    "session_number": session_index,
+                    "reason": " / ".join(reasons),
+                }
+            )
+
+    total_incorrect_errors = 0
+    for attempt in attempts:
+        if attempt.is_correct:
+            continue
+
+        total_incorrect_errors += 1
+        for category in _weakness_categories_for_attempt(attempt):
+            weakness_categories[category] += 1
+
+    weakness_breakdown_rows = []
+    for category in ["urgency", "false_positive", "over_suspicious", "url_tricks"]:
+        count = int(weakness_categories[category])
+        pct_of_errors = round((count / max(total_incorrect_errors, 1)) * 100.0, 2) if total_incorrect_errors else 0.0
+        weakness_breakdown_rows.append(
+            {
+                "category": category,
+                "count": count,
+                "pct_of_errors": pct_of_errors,
+            }
+        )
+
+    avg_response_time_by_difficulty = {}
+    for label in ["beginner", "intermediate", "advanced"]:
+        values = response_time_buckets[label]
+        avg_response_time_by_difficulty[label] = round(sum(values) / len(values), 2) if values else 0.0
+
+    stats_payload = {
+        "skill_distribution": skill_distribution,
+        "accuracy_over_sessions": accuracy_over_sessions,
+        "anomaly_breakdown": anomaly_breakdown,
+        "difficulty_progression": difficulty_progression,
+        "avg_response_time_by_difficulty": avg_response_time_by_difficulty,
+        "weakness_categories": weakness_categories,
+    }
+
+    return {
+        "stats_payload": stats_payload,
+        "total_sessions": len(sessions),
+        "trend_rows": trend_rows,
+        "anomaly_rows": anomaly_rows,
+        "weakness_breakdown_rows": weakness_breakdown_rows,
+    }
 
 
 def _compute_recent_trend(user, *, window_size: int = 5):
@@ -188,6 +468,7 @@ from .serializers import (
     PracticeSubmitResponseSerializer,
     QuizSubmitNormalizedRequestSerializer,
     QuizSubmitResponseSerializer,
+    ReportStatsResponseSerializer,
     RegisterRequestSerializer,
     ResetProgressResponseSerializer,
     ScenarioSerializer,
@@ -489,7 +770,7 @@ def _scenario_dict(scenario: PhishingScenario) -> dict:
             "title": scenario.title,
             "sender_email": scenario.sender_email,
             "subject": scenario.subject,
-            "body": scenario.body,
+            "body": scenario.get_display_body(),
             "difficulty": scenario.difficulty,
         }
     ).data
@@ -509,6 +790,67 @@ def _anomaly_reason(anomaly_analysis: dict) -> str:
         return f"Repeated weaknesses detected: {types}."
 
     return ""
+
+
+def _weakness_pattern_summary(anomaly_analysis: dict) -> str:
+    repeated = anomaly_analysis.get("repeated_weaknesses") or []
+    if not repeated:
+        return ""
+
+    segments = []
+    for item in repeated[:3]:
+        weakness_type = (item or {}).get("type")
+        weakness_count = int((item or {}).get("count", 0))
+        if weakness_type:
+            segments.append(f"{weakness_type} ({weakness_count}x)")
+
+    if not segments:
+        return ""
+    return f"Weakness pattern: {', '.join(segments)}"
+
+
+def _recent_session_accuracy_points(user, *, limit: int = 5, gap_minutes: int = 20):
+    attempts = list(
+        UserAttempt.objects.filter(user=user, assessment_type="practice")
+        .order_by("timestamp")
+    )
+
+    if not attempts:
+        attempts = list(UserAttempt.objects.filter(user=user).order_by("timestamp"))
+    if not attempts:
+        return []
+
+    sessions = []
+    current_session = []
+
+    for attempt in attempts:
+        if not current_session:
+            current_session.append(attempt)
+            continue
+
+        previous = current_session[-1]
+        if (attempt.timestamp - previous.timestamp) > timedelta(minutes=gap_minutes):
+            sessions.append(current_session)
+            current_session = [attempt]
+        else:
+            current_session.append(attempt)
+
+    if current_session:
+        sessions.append(current_session)
+
+    points = []
+    for idx, session_attempts in enumerate(sessions, start=1):
+        session_total = len(session_attempts)
+        session_correct = sum(1 for item in session_attempts if item.is_correct)
+        session_accuracy = round((session_correct / max(session_total, 1)) * 100.0, 2)
+        points.append(
+            {
+                "session_number": idx,
+                "accuracy_pct": session_accuracy,
+            }
+        )
+
+    return points[-limit:]
 
 
 def _build_session_analytics(user):
@@ -636,7 +978,7 @@ def _build_user_performance_pdf(
     total_sessions,
     trend_rows,
     anomaly_rows,
-    top_weaknesses,
+    weakness_breakdown_rows,
     recommendations,
 ):
     buffer = BytesIO()
@@ -659,25 +1001,25 @@ def _build_user_performance_pdf(
     # Cover
     story.append(Paragraph("Dayananda Sagar University", styles["Heading3"]))
     story.append(Spacer(1, 0.1 * inch))
-    story.append(Paragraph("PhishGuard AI - User Performance Report", title_style))
+    story.append(Paragraph("PhishGuard AI — Performance Report", title_style))
     story.append(Spacer(1, 0.18 * inch))
     story.append(Paragraph(f"Username: {xml_escape(str(username))}", body_style))
     story.append(Paragraph(f"Date Generated: {xml_escape(str(generated_on))}", body_style))
     story.append(Spacer(1, 0.14 * inch))
     story.append(Paragraph("Datasets In Use", section_style))
-    story.append(Paragraph("1. kaggle.com/datasets/naserabdullahalam/phishing-email-dataset", body_style))
-    story.append(Paragraph("2. kaggle.com/datasets/wcukierski/enron-email-dataset", body_style))
+    for idx, source in enumerate(REPORT_DATASET_SOURCES, start=1):
+        story.append(Paragraph(f"{idx}. {xml_escape(source)}", body_style))
     story.append(Spacer(1, 0.22 * inch))
 
     # Skill Profile
-    story.append(Paragraph("Skill Profile", section_style))
+    story.append(Paragraph("Section 1: Skill Profile", section_style))
     story.append(Paragraph(f"Classification Label: {xml_escape(str(skill_label))}", body_style))
     story.append(Paragraph(f"Confidence Score: {round(float(confidence_score), 4)}", body_style))
     story.append(Paragraph(f"Total Sessions Completed: {total_sessions}", body_style))
     story.append(Spacer(1, 0.2 * inch))
 
     # Accuracy Trend
-    story.append(Paragraph("Accuracy Trend", section_style))
+    story.append(Paragraph("Section 2: Accuracy Trend", section_style))
     trend_table_data = [["Session #", "Accuracy %", "Difficulty", "Anomaly Flagged"]]
     for row in trend_rows[-10:]:
         trend_table_data.append(
@@ -698,7 +1040,7 @@ def _build_user_performance_pdf(
     story.append(Spacer(1, 0.2 * inch))
 
     # Anomaly Log
-    story.append(Paragraph("Anomaly Log", section_style))
+    story.append(Paragraph("Section 3: Anomaly Log", section_style))
     anomaly_table_data = [["Session #", "Reason"]]
     for row in anomaly_rows:
         anomaly_table_data.append([str(row["session_number"]), row["reason"]])
@@ -712,21 +1054,21 @@ def _build_user_performance_pdf(
     story.append(Spacer(1, 0.2 * inch))
 
     # Weakness Analysis
-    story.append(Paragraph("Weakness Analysis", section_style))
-    weakness_table_data = [["Category", "Occurrences"]]
-    for row in top_weaknesses[:3]:
-        weakness_table_data.append([str(row["category"]), str(row["count"])])
+    story.append(Paragraph("Section 4: Weakness Breakdown", section_style))
+    weakness_table_data = [["Category", "Count", "% of Errors"]]
+    for row in weakness_breakdown_rows:
+        weakness_table_data.append([str(row["category"]), str(row["count"]), f"{row['pct_of_errors']:.2f}%"])
 
     if len(weakness_table_data) == 1:
-        weakness_table_data.append(["No repeated categories", "0"])
+        weakness_table_data.append(["No repeated categories", "0", "0.00%"])
 
-    weakness_table = Table(weakness_table_data, colWidths=[3.3 * inch, 1.8 * inch])
+    weakness_table = Table(weakness_table_data, colWidths=[2.6 * inch, 1.3 * inch, 1.2 * inch])
     weakness_table.setStyle(_table_style())
     story.append(weakness_table)
     story.append(Spacer(1, 0.2 * inch))
 
     # Recommendations
-    story.append(Paragraph("Recommendations", section_style))
+    story.append(Paragraph("Section 5: Recommended Modules", section_style))
     if recommendations:
         for idx, item in enumerate(recommendations, start=1):
             story.append(Paragraph(f"{idx}. {xml_escape(str(item))}", body_style))
@@ -997,16 +1339,8 @@ def dashboard(request):
         skill_label = profile.skill_level
         confidence_score = 0.5
 
-    recent_records = list(
-        BehavioralDatasetRecord.objects.filter(user=request.user, source="practice")
-        .order_by("-created_at")[:5]
-    )
-    if len(recent_records) < 5:
-        recent_records = list(
-            BehavioralDatasetRecord.objects.filter(user=request.user)
-            .order_by("-created_at")[:5]
-        )
-    recent_accuracy_trend = [float(r.accuracy) for r in reversed(recent_records)]
+    recent_accuracy_points = _recent_session_accuracy_points(request.user, limit=5, gap_minutes=20)
+    recent_accuracy_trend = [float(point["accuracy_pct"]) for point in recent_accuracy_points]
 
     recommendations = list(
         TrainingRecommendation.objects.filter(user=request.user, is_read=False)
@@ -1014,24 +1348,48 @@ def dashboard(request):
     )
 
     recent_attempts = UserAttempt.objects.filter(user=request.user).order_by("-timestamp")[:10]
-    attempts = UserAttempt.objects.filter(user=request.user).order_by("-timestamp")[:20]
+    attempts = list(UserAttempt.objects.filter(user=request.user).order_by("-timestamp")[:20])
     correct_series = [1 if a.is_correct else 0 for a in reversed(attempts)]
 
-    next_difficulty = _next_difficulty_for_user(request.user, profile.skill_level)
     adaptive_state, _ = AdaptiveLearningState.objects.get_or_create(
         user=request.user,
         defaults={"current_difficulty": _base_difficulty(profile.skill_level)},
     )
+
+    anomaly_reason = _anomaly_reason(anomaly_analysis)
+    weakness_pattern = _weakness_pattern_summary(anomaly_analysis)
+
+    recommended_modules = []
+    for module_item in anomaly_analysis.get("recommended_modules", []):
+        module_name = module_item.get("module")
+        if not module_name:
+            continue
+
+        reason = str(module_item.get("reason") or "").strip()
+        why_recommended = reason or anomaly_reason or weakness_pattern
+        recommended_modules.append(
+            {
+                "module": module_name,
+                "reason": reason,
+                "why_recommended": why_recommended,
+                "weakness_pattern": weakness_pattern,
+            }
+        )
+
+    next_difficulty = adaptive_state.current_difficulty
 
     payload = {
         # Required fields
         "skill_label": skill_label,
         "confidence_score": float(round(confidence_score, 4)),
         "anomaly_flag": bool(profile.is_anomalous),
-        "anomaly_reason": _anomaly_reason(anomaly_analysis),
+        "anomaly_reason": anomaly_reason,
         "recent_accuracy_trend": recent_accuracy_trend,
-        "recommended_modules": anomaly_analysis.get("recommended_modules", []),
+        "recent_accuracy_points": recent_accuracy_points,
+        "recommended_modules": recommended_modules,
         "total_attempts": int(profile.total_attempts),
+        "weakness_pattern": weakness_pattern,
+        "recent_attempt_window": len(attempts),
 
         # Legacy payload (kept)
         "profile": _profile_payload(profile),
@@ -1068,6 +1426,14 @@ def dashboard(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def report_stats(request):
+    report_data = _build_report_stats(request.user)
+    payload = report_data["stats_payload"]
+    return Response(ReportStatsResponseSerializer(payload).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def generate_report(request):
     profile = request.user.userprofile
 
@@ -1078,7 +1444,7 @@ def generate_report(request):
         skill_label = profile.skill_level
         confidence_score = 0.5
 
-    analytics = _build_session_analytics(request.user)
+    report_data = _build_report_stats(request.user)
     anomaly_analysis = _anomaly_personalization_analysis(request.user)
     recommendations = _collect_report_recommendations(request.user, anomaly_analysis)
 
@@ -1088,10 +1454,10 @@ def generate_report(request):
         generated_on=generated_on,
         skill_label=skill_label,
         confidence_score=confidence_score,
-        total_sessions=analytics["total_sessions"],
-        trend_rows=analytics["trend_rows"],
-        anomaly_rows=analytics["anomaly_rows"],
-        top_weaknesses=analytics["top_weaknesses"],
+        total_sessions=report_data["total_sessions"],
+        trend_rows=report_data["trend_rows"],
+        anomaly_rows=report_data["anomaly_rows"],
+        weakness_breakdown_rows=report_data["weakness_breakdown_rows"],
         recommendations=recommendations,
     )
 
@@ -1104,7 +1470,9 @@ def generate_report(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def practice(request):
-    profile_skill = request.user.userprofile.skill_level
+    profile = UserProfile.objects.filter(user=request.user).first()
+    profile_skill = profile.skill_level if profile is not None else "beginner"
+
     requested_difficulty = request.GET.get("difficulty")
     if requested_difficulty in {"easy", "medium", "hard"}:
         difficulty = requested_difficulty
@@ -1116,10 +1484,22 @@ def practice(request):
     seen_ids = list(UserAttempt.objects.filter(user=request.user).values_list("scenario_id", flat=True))
     scenario = pick_practice_scenario(user=request.user, difficulty=difficulty, exclude_ids=seen_ids)
 
+    # If the user has exhausted the unseen pool, recycle scenarios rather than returning empty.
+    if not scenario:
+        scenario = pick_practice_scenario(user=request.user, difficulty=difficulty)
+
     if not scenario:
         return Response({"error": "No scenarios available"}, status=status.HTTP_404_NOT_FOUND)
 
-    payload = {"scenario": _scenario_dict(scenario), "difficulty": difficulty, "assigned_by": assigned_by}
+    scenario_payload = {
+        "id": scenario.id,
+        "subject": scenario.subject,
+        "sender": scenario.sender_email,
+        "body": scenario.get_display_body(),
+        "difficulty": scenario.difficulty,
+        "scenario_type": "phishing" if scenario.is_phishing else "legitimate",
+    }
+    payload = {"scenario": scenario_payload, "difficulty": difficulty, "assigned_by": assigned_by}
     return Response(PracticeGetResponseSerializer(payload).data)
 
 
@@ -1252,26 +1632,38 @@ def session_feedback(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def leaderboard(request):
-    top = []
     profiles = list(
-        request.user.userprofile.__class__.objects.select_related("user")
-        .order_by("-correct_answers", "avg_response_time")[:10]
+        UserProfile.objects.select_related("user")
+        .order_by("-correct_answers", "avg_response_time", "user__username")
     )
 
-    for index, profile in enumerate(profiles, start=1):
-        top.append(
-            {
-                "rank": index,
-                "username": profile.user.username,
-                "skill_level": profile.skill_level,
-                "accuracy": round(profile.accuracy(), 2),
-                "attempts": profile.total_attempts,
-                "avg_response_time": round(profile.avg_response_time, 2),
-                "is_current": profile.user_id == request.user.id,
-            }
-        )
+    def mask_username(username: str) -> str:
+        return f"{username[:3]}***"
 
-    payload = {"leaders": top}
+    def serialize_entry(profile: UserProfile, rank: int) -> dict:
+        is_current_user = profile.user_id == request.user.id
+        return {
+            "rank": rank,
+            "username": profile.user.username if is_current_user else mask_username(profile.user.username),
+            "skill_label": profile.skill_level,
+            "accuracy": round(profile.accuracy(), 2),
+            "total_attempts": int(profile.total_attempts),
+            "avg_response_time": round(float(profile.avg_response_time), 2),
+            "is_current_user": is_current_user,
+        }
+
+    leaders = [serialize_entry(profile, rank) for rank, profile in enumerate(profiles[:10], start=1)]
+
+    current_user_entry = None
+    for rank, profile in enumerate(profiles, start=1):
+        if profile.user_id == request.user.id:
+            current_user_entry = serialize_entry(profile, rank)
+            break
+
+    payload = {
+        "leaders": leaders,
+        "your_rank": current_user_entry if current_user_entry and current_user_entry["rank"] > 10 else None,
+    }
     return Response(LeaderboardResponseSerializer(payload).data)
 
 

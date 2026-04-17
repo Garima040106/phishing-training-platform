@@ -32,6 +32,7 @@ urlpatterns = [
     path('api/quiz/baseline/', views.baseline_quiz, name='api_baseline_quiz'),
     path('api/quiz/submit/', views.submit_quiz, name='api_submit_quiz'),
     path('api/dashboard/', views.dashboard, name='api_dashboard'),
+    path('api/report/stats/', views.report_stats, name='api_report_stats'),
     path('api/report/generate/', views.generate_report, name='api_generate_report'),
     path('api/practice/', views.practice, name='api_practice'),
     path('api/practice/submit/', views.submit_practice, name='api_submit_practice'),

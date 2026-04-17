@@ -105,7 +105,7 @@ class QuizSubmitResponseSerializer(serializers.Serializer):
 
 
 class PracticeGetResponseSerializer(serializers.Serializer):
-    scenario = ScenarioSerializer()
+    scenario = serializers.DictField()
     difficulty = serializers.ChoiceField(choices=["easy", "medium", "hard"])
     assigned_by = serializers.ChoiceField(choices=["manual_override", "adaptive_engine"])
 
@@ -132,6 +132,8 @@ class PracticeSubmitResponseSerializer(serializers.Serializer):
 class ModuleRecommendationSerializer(serializers.Serializer):
     module = serializers.CharField()
     reason = serializers.CharField()
+    why_recommended = serializers.CharField(required=False, allow_blank=True)
+    weakness_pattern = serializers.CharField(required=False, allow_blank=True)
 
 
 class DashboardResponseSerializer(serializers.Serializer):
@@ -141,8 +143,11 @@ class DashboardResponseSerializer(serializers.Serializer):
     anomaly_flag = serializers.BooleanField()
     anomaly_reason = serializers.CharField(allow_blank=True)
     recent_accuracy_trend = serializers.ListField(child=serializers.FloatField())
+    recent_accuracy_points = serializers.ListField(child=serializers.DictField(), required=False)
     recommended_modules = ModuleRecommendationSerializer(many=True)
     total_attempts = serializers.IntegerField()
+    weakness_pattern = serializers.CharField(required=False, allow_blank=True)
+    recent_attempt_window = serializers.IntegerField(required=False)
 
     # Legacy payload (kept for compatibility)
     profile = ProfilePayloadSerializer(required=False)
@@ -155,6 +160,50 @@ class DashboardResponseSerializer(serializers.Serializer):
     correct_series = serializers.ListField(child=serializers.IntegerField(), required=False)
     recent_attempts = serializers.ListField(child=serializers.DictField(), required=False)
     recommendations = serializers.ListField(child=serializers.DictField(), required=False)
+
+
+class ReportSkillDistributionSerializer(serializers.Serializer):
+    beginner = serializers.IntegerField()
+    intermediate = serializers.IntegerField()
+    advanced = serializers.IntegerField()
+
+
+class ReportAccuracyOverSessionSerializer(serializers.Serializer):
+    session = serializers.IntegerField()
+    accuracy = serializers.FloatField()
+
+
+class ReportAnomalyBreakdownSerializer(serializers.Serializer):
+    random_clicking = serializers.IntegerField()
+    sudden_drop = serializers.IntegerField()
+    repeated_weakness = serializers.IntegerField()
+
+
+class ReportDifficultyProgressionSerializer(serializers.Serializer):
+    session = serializers.IntegerField()
+    difficulty = serializers.ChoiceField(choices=["beginner", "intermediate", "advanced"])
+
+
+class ReportAvgResponseTimeByDifficultySerializer(serializers.Serializer):
+    beginner = serializers.FloatField()
+    intermediate = serializers.FloatField()
+    advanced = serializers.FloatField()
+
+
+class ReportWeaknessCategoriesSerializer(serializers.Serializer):
+    urgency = serializers.IntegerField()
+    false_positive = serializers.IntegerField()
+    over_suspicious = serializers.IntegerField()
+    url_tricks = serializers.IntegerField()
+
+
+class ReportStatsResponseSerializer(serializers.Serializer):
+    skill_distribution = ReportSkillDistributionSerializer()
+    accuracy_over_sessions = ReportAccuracyOverSessionSerializer(many=True)
+    anomaly_breakdown = ReportAnomalyBreakdownSerializer()
+    difficulty_progression = ReportDifficultyProgressionSerializer(many=True)
+    avg_response_time_by_difficulty = ReportAvgResponseTimeByDifficultySerializer()
+    weakness_categories = ReportWeaknessCategoriesSerializer()
 
 
 class EmailDetectRequestSerializer(serializers.Serializer):
@@ -174,8 +223,19 @@ class SessionFeedbackResponseSerializer(serializers.Serializer):
     next_difficulty = serializers.CharField()
 
 
+class LeaderboardEntrySerializer(serializers.Serializer):
+    rank = serializers.IntegerField()
+    username = serializers.CharField()
+    skill_label = serializers.CharField()
+    accuracy = serializers.FloatField()
+    total_attempts = serializers.IntegerField()
+    avg_response_time = serializers.FloatField()
+    is_current_user = serializers.BooleanField()
+
+
 class LeaderboardResponseSerializer(serializers.Serializer):
-    leaders = serializers.ListField(child=serializers.DictField())
+    leaders = LeaderboardEntrySerializer(many=True)
+    your_rank = LeaderboardEntrySerializer(required=False, allow_null=True)
 
 
 class MethodologyResponseSerializer(serializers.Serializer):

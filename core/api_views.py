@@ -17,6 +17,7 @@ from .views import (  # noqa: F401
     me,
     methodology,
     generate_report,
+    report_stats,
     practice,
     register,
     reset_progress,
