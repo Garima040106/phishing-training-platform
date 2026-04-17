@@ -9,6 +9,12 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DJANGO_SECRET_KEY: ci-secret-key
+      SECRET_KEY: ci-secret-key
+      DEBUG: "False"
+      ALLOWED_HOSTS: 127.0.0.1,localhost,testserver
 
     steps:
       - name: Checkout
@@ -31,7 +37,14 @@ jobs:
         run: |
           python manage.py check
           python manage.py migrate --noinput
-          python manage.py seed_scenarios
+
+      - name: Seed scenarios (optional in CI)
+        run: |
+          if [ -f datasets/phishing_email.csv ] && [ -f datasets/emails.csv ]; then
+            python manage.py seed_scenarios
+          else
+            echo "datasets/ CSV files are not available in CI checkout; skipping seed_scenarios"
+          fi
 
       - name: Model retrain sanity (fallback allowed if Kaggle absent)
         run: python manage.py retrain_models
