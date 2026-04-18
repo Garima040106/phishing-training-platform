@@ -34,8 +34,21 @@ export default function Login() {
       toast.success("Signed in successfully");
       const to = location.state?.from?.pathname || "/dashboard";
       navigate(to, { replace: true });
-    } catch {
-      const message = "Invalid credentials.";
+    } catch (err) {
+      const status = err?.response?.status;
+      const apiError = err?.response?.data?.error;
+
+      let message = "Invalid credentials.";
+      if (typeof apiError === "string" && apiError.trim()) {
+        message = apiError;
+      } else if (status === 404) {
+        message = "Authentication service is unavailable right now. Please try again shortly.";
+      } else if (status >= 500) {
+        message = "Server error while signing in. Please try again shortly.";
+      } else if (!status) {
+        message = "Unable to reach the authentication server. Check your connection and try again.";
+      }
+
       setError(message);
       toast.error(message);
     } finally {

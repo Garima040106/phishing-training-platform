@@ -39,8 +39,21 @@ export default function Register() {
       await register(payload);
       toast.success("Account created successfully");
       navigate("/quiz");
-    } catch {
-      const message = "Registration failed. Check your details and try again.";
+    } catch (err) {
+      const status = err?.response?.status;
+      const apiError = err?.response?.data?.error;
+
+      let message = "Registration failed. Check your details and try again.";
+      if (typeof apiError === "string" && apiError.trim()) {
+        message = apiError;
+      } else if (status === 404) {
+        message = "Registration service is unavailable right now. Please try again shortly.";
+      } else if (status >= 500) {
+        message = "Server error while creating account. Please try again shortly.";
+      } else if (!status) {
+        message = "Unable to reach the registration server. Check your connection and try again.";
+      }
+
       setError(message);
       toast.error(message);
     } finally {
