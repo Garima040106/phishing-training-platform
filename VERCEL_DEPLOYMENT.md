@@ -52,7 +52,7 @@ After deployment, confirm these URLs respond:
 You can use either option.
 
 ### Option A: Root Directory `./` (works with included root `vercel.json`)
-- Framework Preset: `Other`
+- Framework Preset: `Other` or `Vite`
 - Root Directory: `./`
 
 ### Option B: Root Directory `frontend` (works with `frontend/vercel.json`)
@@ -66,6 +66,17 @@ VITE_API_BASE_URL=https://your-backend-domain/api
 ```
 
 Deploy after setting the variable.
+
+## Common Error: "No module named django" during Vercel build
+
+If you see this error right after frontend build completes, Vercel is still treating the project as Django.
+
+Fix it with one of these:
+
+1. Preferred: In Vercel project settings, set Root Directory to `frontend` and Framework Preset to `Vite`.
+2. Or keep Root Directory `./` and set Framework Preset to `Other` or `Vite`.
+
+Then trigger a new deployment.
 
 ## 3. Post-Deploy Smoke Test
 
