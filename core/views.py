@@ -1491,10 +1491,13 @@ def practice(request):
     if not scenario:
         return Response({"error": "No scenarios available"}, status=status.HTTP_404_NOT_FOUND)
 
+    sender_value = (scenario.sender_email or "").strip() or "unknown@example.com"
+
     scenario_payload = {
         "id": scenario.id,
         "subject": scenario.subject,
-        "sender": scenario.sender_email,
+        "sender": sender_value,
+        "sender_email": sender_value,
         "body": scenario.get_display_body(),
         "difficulty": scenario.difficulty,
         "scenario_type": "phishing" if scenario.is_phishing else "legitimate",

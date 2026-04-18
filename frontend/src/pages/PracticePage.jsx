@@ -121,6 +121,7 @@ export default function PracticePage() {
   if (!payload?.scenario) return null;
 
   const { scenario } = payload;
+  const senderAddress = scenario.sender || scenario.sender_email || "Unknown sender";
 
   return (
     <div className="space-y-6">
@@ -148,7 +149,7 @@ export default function PracticePage() {
           <div className="px-5 py-4 text-sm">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[72px_1fr] sm:gap-x-3">
               <p className="font-semibold text-slate-600">From</p>
-              <p className="font-mono text-slate-700 break-all">{scenario.sender}</p>
+              <p className="font-mono text-slate-700 break-all">{senderAddress}</p>
 
               <p className="font-semibold text-slate-600">Subject</p>
               <p className="text-slate-800">{scenario.subject}</p>
