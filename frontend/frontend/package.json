@@ -1,0 +1,9 @@
+{
+  "name": "frontend-vercel-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "postinstall": "npm --prefix .. install",
+    "build": "npm --prefix .. run build && rm -rf dist && cp -r ../dist ./dist"
+  }
+}
