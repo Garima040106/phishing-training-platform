@@ -115,3 +115,10 @@ Local development URLs:
 ## License
 
 Educational and academic demonstration use.
+
+## Deployment
+
+Use the split deployment guide in [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for production:
+- Frontend on Vercel
+- Django API on Render/Railway
+- Postgres database

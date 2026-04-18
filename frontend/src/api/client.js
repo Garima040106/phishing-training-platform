@@ -2,6 +2,7 @@ import axios from "axios";
 
 const ACCESS_KEY = "phishguard.access";
 const REFRESH_KEY = "phishguard.refresh";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
 export function getAccessToken() {
   return localStorage.getItem(ACCESS_KEY);
@@ -19,7 +20,7 @@ export function clearAuthTokens() {
 }
 
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: API_BASE_URL,
   headers: {
     "X-Requested-With": "XMLHttpRequest",
   },

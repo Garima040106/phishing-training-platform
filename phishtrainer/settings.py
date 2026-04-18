@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import os
+from urllib.parse import unquote, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -15,6 +16,50 @@ def _env_bool(name, default=False):
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_list(name, default=None):
+    raw = os.environ.get(name)
+    if raw is None:
+        return list(default or [])
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _database_config(base_dir: Path):
+    database_url = (os.environ.get("DATABASE_URL") or "").strip()
+    if not database_url:
+        return {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": base_dir / "db.sqlite3",
+            }
+        }
+
+    parsed = urlparse(database_url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in {"postgres", "postgresql", "pgsql"}:
+        raise ImproperlyConfigured(
+            "DATABASE_URL must use postgres/postgresql scheme for production deployments"
+        )
+
+    db_name = unquote((parsed.path or "").lstrip("/"))
+    if not db_name:
+        raise ImproperlyConfigured("DATABASE_URL is missing a database name")
+
+    config = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": db_name,
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or "5432"),
+    }
+
+    ssl_mode = (os.environ.get("DB_SSLMODE") or "require").strip()
+    if ssl_mode:
+        config["OPTIONS"] = {"sslmode": ssl_mode}
+
+    return {"default": config}
 
 
 DEBUG = _env_bool("DEBUG", default=True)
@@ -41,6 +86,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
     'crispy_forms',
@@ -72,6 +118,7 @@ REST_FRAMEWORK = {
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -100,12 +147,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'phishtrainer.wsgi.application'
 
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+DATABASES = _database_config(BASE_DIR)
 
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -135,5 +177,23 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+CORS_ALLOWED_ORIGINS = _env_list(
+    "CORS_ALLOWED_ORIGINS",
+    default=["http://localhost:5173", "http://127.0.0.1:5173"],
+)
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = _env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    default=["http://localhost:5173", "http://127.0.0.1:5173"],
+)
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", default=True)
