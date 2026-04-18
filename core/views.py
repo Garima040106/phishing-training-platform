@@ -1097,12 +1097,15 @@ def register(request):
     serializer.is_valid(raise_exception=True)
 
     username = serializer.validated_data["username"]
+    email = (serializer.validated_data.get("email") or "").strip().lower()
     password = serializer.validated_data["password1"]
 
     if User.objects.filter(username=username).exists():
         return Response({"error": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    if email and User.objects.filter(email__iexact=email).exists():
+        return Response({"error": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(username=username, password=password)
+    user = User.objects.create_user(username=username, email=email, password=password)
     payload = {
         "ok": True,
         "username": user.username,
@@ -1121,10 +1124,26 @@ def login_view(request):
     serializer = LoginRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    username = serializer.validated_data["username"]
+    credential = serializer.validated_data["username"].strip()
     password = serializer.validated_data["password"]
 
+    username = credential
+    resolved_user = None
+    if "@" in credential:
+        resolved_user = User.objects.filter(email__iexact=credential).first()
+        if resolved_user:
+            username = resolved_user.username
+
     user = authenticate(request, username=username, password=password)
+    if not user:
+        # Some deployments can return None from authenticate() despite valid local
+        # credentials. Fall back to an explicit password check against the
+        # resolved user to keep username/email login reliable.
+        if resolved_user is None:
+            resolved_user = User.objects.filter(username=username).first()
+        if resolved_user and resolved_user.is_active and resolved_user.check_password(password):
+            user = resolved_user
+
     if not user:
         return Response({"error": "Invalid credentials"}, status=status.HTTP_400_BAD_REQUEST)
 

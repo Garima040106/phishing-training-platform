@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
+
 import api, { initCsrf } from "../api/client";
+import GlowCard from "../components/GlowCard";
 import Loading from "../components/Loading";
+
+const MotionButton = motion.button;
 
 export default function PracticePage() {
   const location = useLocation();
@@ -100,21 +105,21 @@ export default function PracticePage() {
 
   if (error) {
     return (
-      <div className="card-padded border border-red-200 bg-red-50">
-        <h2 className="text-xl font-semibold text-red-800">Could not load practice</h2>
-        <p className="mt-2 text-red-700">{error}</p>
-      </div>
+      <GlowCard className="border-danger/35 bg-danger/10 p-5">
+        <h2 className="text-xl font-semibold text-danger">Could not load practice</h2>
+        <p className="mt-2 text-text/90">{error}</p>
+      </GlowCard>
     );
   }
 
   if (isEmpty) {
     return (
-      <div className="card-padded">
-        <h2 className="text-2xl font-bold text-slate-900">No scenarios available</h2>
-        <p className="mt-2 text-slate-600">
+      <GlowCard className="p-5">
+        <h2 className="text-2xl font-bold text-text">No scenarios available</h2>
+        <p className="mt-2 text-muted">
           The practice scenario database is currently empty. Please run the seed command and try again.
         </p>
-      </div>
+      </GlowCard>
     );
   }
 
@@ -126,59 +131,64 @@ export default function PracticePage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-slate-900">
-          Practice • <span className="text-[#1a237e] capitalize">{payload.difficulty}</span>
+        <h1 className="text-3xl font-bold text-text">
+          Practice • <span className="capitalize text-accent">{payload.difficulty}</span>
         </h1>
-        <p className="text-slate-600">
-          Assigned by: <span className="font-semibold capitalize text-[#1a237e]">{(payload.assigned_by || "adaptive_engine").replace("_", " ")}</span>
+        <p className="text-muted">
+          Assigned by:{" "}
+          <span className="font-semibold capitalize text-accent">
+            {(payload.assigned_by || "adaptive_engine").replace("_", " ")}
+          </span>
         </p>
       </div>
 
-      <div className="card-padded">
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-medium text-amber-800">Time remaining to classify this email</p>
-          <p className={`text-2xl font-bold ${secondsLeft <= 10 ? "text-red-700" : "text-amber-900"}`}>{secondsLeft}s</p>
+      <GlowCard className="p-5">
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-warning/35 bg-warning/10 px-4 py-3">
+          <p className="text-sm font-medium text-warning">Time remaining to classify this email</p>
+          <p className={`text-2xl font-bold ${secondsLeft <= 10 ? "text-danger" : "text-warning"}`}>{secondsLeft}s</p>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Inbox message</p>
-            <p className="mt-2 text-lg font-semibold text-slate-900">{scenario.subject}</p>
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-background/60 shadow-card">
+          <div className="border-b border-white/10 bg-background/80 px-5 py-4">
+            <p className="text-xs uppercase tracking-wide text-muted">Inbox message</p>
+            <p className="mt-2 text-lg font-semibold text-text">{scenario.subject}</p>
           </div>
 
           <div className="px-5 py-4 text-sm">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[72px_1fr] sm:gap-x-3">
-              <p className="font-semibold text-slate-600">From</p>
-              <p className="font-mono text-slate-700 break-all">{senderAddress}</p>
+              <p className="font-semibold text-muted">From</p>
+              <p className="break-all font-mono text-text/90">{senderAddress}</p>
 
-              <p className="font-semibold text-slate-600">Subject</p>
-              <p className="text-slate-800">{scenario.subject}</p>
+              <p className="font-semibold text-muted">Subject</p>
+              <p className="text-text">{scenario.subject}</p>
 
-              <p className="font-semibold text-slate-600">Body</p>
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <p className="whitespace-pre-wrap leading-relaxed text-slate-700">{scenario.body}</p>
+              <p className="font-semibold text-muted">Body</p>
+              <div className="rounded-md border border-white/10 bg-surface p-3">
+                <p className="whitespace-pre-wrap leading-relaxed text-text/90">{scenario.body}</p>
               </div>
             </div>
           </div>
         </div>
 
         <div className="mt-6 flex gap-3">
-          <button
+          <MotionButton
             onClick={() => submit("phishing")}
-            className="btn-danger flex-1 disabled:cursor-not-allowed disabled:opacity-60"
+            whileTap={{ scale: 0.96 }}
+            className="flex-1 rounded-lg border border-danger/35 bg-danger px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
           >
-            🚨 Phishing
-          </button>
-          <button
+            Phishing
+          </MotionButton>
+          <MotionButton
             onClick={() => submit("legitimate")}
-            className="btn-success flex-1 disabled:cursor-not-allowed disabled:opacity-60"
+            whileTap={{ scale: 0.96 }}
+            className="flex-1 rounded-lg border border-success/35 bg-success px-4 py-2.5 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
           >
-            ✓ Legitimate
-          </button>
+            Legitimate
+          </MotionButton>
         </div>
-      </div>
+      </GlowCard>
     </div>
   );
 }

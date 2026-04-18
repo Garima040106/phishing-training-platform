@@ -1,5 +1,6 @@
 import { Component, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import toast from "react-hot-toast";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
@@ -15,8 +16,9 @@ class ErrorBoundary extends Component {
     return { error };
   }
 
-  componentDidCatch(error, errorInfo) {
-    console.error("App crashed", error, errorInfo);
+  componentDidCatch(error) {
+    const message = error?.message || "Unexpected application error";
+    toast.error(`App crashed: ${message}`);
   }
 
   render() {

@@ -39,6 +39,7 @@ class CsrfResponseSerializer(serializers.Serializer):
 
 class RegisterRequestSerializer(serializers.Serializer):
     username = serializers.CharField(min_length=3, max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
     password1 = serializers.CharField(min_length=8, write_only=True)
     password2 = serializers.CharField(min_length=8, write_only=True)
 

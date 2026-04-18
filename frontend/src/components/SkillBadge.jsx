@@ -1,5 +1,3 @@
-import React from "react";
-
 const SkillBadge = ({ skill, confidence, attemptsCount }) => {
   const label = String(skill || "unknown");
   const normalized = label.toLowerCase();
@@ -14,13 +12,13 @@ const SkillBadge = ({ skill, confidence, attemptsCount }) => {
   const color = (() => {
     switch (normalized) {
       case "beginner":
-        return "bg-red-500 text-white";
+        return "border-warning/40 bg-warning/15 text-warning";
       case "intermediate":
-        return "bg-yellow-400 text-slate-900";
+        return "border-accent/45 bg-accent/15 text-accent";
       case "advanced":
-        return "bg-green-500 text-white";
+        return "border-success/40 bg-success/15 text-success";
       default:
-        return "bg-slate-500 text-white";
+        return "border-white/20 bg-white/5 text-text";
     }
   })();
 
@@ -29,14 +27,16 @@ const SkillBadge = ({ skill, confidence, attemptsCount }) => {
 
   return (
     <div className="group relative inline-flex">
-      <div className={`skill-badge-pulse inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold ${color}`}>
+      <div
+        className={`skill-badge-pulse inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold ${color}`}
+      >
         <span className="capitalize">{label}</span>
         {pct == null ? null : <span className="opacity-90">{pct}%</span>}
       </div>
 
       <div
         role="tooltip"
-        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-md transition-all duration-200 group-hover:-translate-y-1 group-hover:opacity-100"
+        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/15 bg-surface px-2 py-1 text-[11px] font-medium text-text opacity-0 shadow-card transition-all duration-200 group-hover:-translate-y-1 group-hover:opacity-100"
       >
         {tooltipText}
       </div>

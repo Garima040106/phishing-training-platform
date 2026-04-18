@@ -1,0 +1,172 @@
+import { useState } from "react";
+import { motion } from "framer-motion";
+import toast from "react-hot-toast";
+import { Lock, Mail, Shield, UserRound } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+
+import ShieldScene from "../components/ShieldScene";
+import { useAuth } from "../context/AuthContext";
+
+const MotionDiv = motion.div;
+const MotionButton = motion.button;
+
+export default function Register() {
+  const { register } = useAuth();
+  const navigate = useNavigate();
+
+  const [form, setForm] = useState({
+    username: "",
+    email: "",
+    password1: "",
+    password2: "",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const onSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const payload = new URLSearchParams({
+        username: form.username.trim(),
+        email: form.email.trim(),
+        password1: form.password1,
+        password2: form.password2,
+      });
+
+      await register(payload);
+      toast.success("Account created successfully");
+      navigate("/quiz");
+    } catch {
+      const message = "Registration failed. Check your details and try again.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[#05050b] text-text">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_16%,rgba(108,99,255,0.18),transparent_32%),radial-gradient(circle_at_84%_82%,rgba(108,99,255,0.08),transparent_40%)]" />
+
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 sm:py-6 lg:flex-row lg:px-10 lg:py-8">
+        <section className="order-1 h-44 w-full sm:h-56 lg:order-2 lg:h-auto lg:w-1/2 lg:pl-6">
+          <ShieldScene />
+        </section>
+
+        <section className="order-2 flex w-full items-center justify-center py-8 lg:order-1 lg:w-1/2 lg:py-0 lg:pr-6">
+          <MotionDiv
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: "easeOut" }}
+            className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0d0d16]/95 p-6 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl sm:p-8"
+          >
+            <div className="mb-7 flex items-start gap-3">
+              <div className="rounded-xl border border-[#6c63ff]/45 bg-[#6c63ff]/15 p-2.5">
+                <Shield className="h-5 w-5 text-[#918aff]" />
+              </div>
+
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-transparent bg-gradient-to-r from-[#b8b1ff] via-[#8f86ff] to-[#6c63ff] bg-clip-text">
+                  PhishGuard AI
+                </h1>
+                <p className="mt-1 text-sm text-slate-300">Train your instincts. Defend the perimeter.</p>
+              </div>
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-3.5">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Username</span>
+                <div className="group flex items-center gap-2 rounded-xl border border-white/10 bg-[#111120] px-3 py-2.5 transition focus-within:border-[#8f86ff]/60 focus-within:ring-2 focus-within:ring-[#6c63ff]/35">
+                  <UserRound className="h-4 w-4 text-slate-400 transition group-focus-within:text-[#9c95ff]" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Choose a username"
+                    value={form.username}
+                    onChange={(e) => setForm((prev) => ({ ...prev, username: e.target.value }))}
+                    className="w-full border-0 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Email</span>
+                <div className="group flex items-center gap-2 rounded-xl border border-white/10 bg-[#111120] px-3 py-2.5 transition focus-within:border-[#8f86ff]/60 focus-within:ring-2 focus-within:ring-[#6c63ff]/35">
+                  <Mail className="h-4 w-4 text-slate-400 transition group-focus-within:text-[#9c95ff]" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="you@company.com"
+                    value={form.email}
+                    onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+                    className="w-full border-0 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Password</span>
+                <div className="group flex items-center gap-2 rounded-xl border border-white/10 bg-[#111120] px-3 py-2.5 transition focus-within:border-[#8f86ff]/60 focus-within:ring-2 focus-within:ring-[#6c63ff]/35">
+                  <Lock className="h-4 w-4 text-slate-400 transition group-focus-within:text-[#9c95ff]" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Create a password"
+                    value={form.password1}
+                    onChange={(e) => setForm((prev) => ({ ...prev, password1: e.target.value }))}
+                    className="w-full border-0 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Confirm Password</span>
+                <div className="group flex items-center gap-2 rounded-xl border border-white/10 bg-[#111120] px-3 py-2.5 transition focus-within:border-[#8f86ff]/60 focus-within:ring-2 focus-within:ring-[#6c63ff]/35">
+                  <Lock className="h-4 w-4 text-slate-400 transition group-focus-within:text-[#9c95ff]" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Confirm your password"
+                    value={form.password2}
+                    onChange={(e) => setForm((prev) => ({ ...prev, password2: e.target.value }))}
+                    className="w-full border-0 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                </div>
+              </label>
+
+              {error ? <p className="text-sm font-medium text-danger">{error}</p> : null}
+
+              <MotionButton
+                type="submit"
+                disabled={loading}
+                whileHover={{ y: -1, boxShadow: "0 0 28px rgba(108,99,255,0.45)" }}
+                whileTap={{ scale: 0.96 }}
+                className="relative mt-1 flex w-full items-center justify-center overflow-hidden rounded-xl border border-[#938bff]/50 bg-gradient-to-r from-[#5d55ef] via-[#6c63ff] to-[#827bff] px-4 py-3 text-sm font-bold tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <motion.span
+                  aria-hidden="true"
+                  initial={{ x: "-180%" }}
+                  whileHover={{ x: "250%" }}
+                  transition={{ duration: 0.9, ease: "easeOut" }}
+                  className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                />
+                <span className="relative z-10">{loading ? "Creating account..." : "Create Secure Account"}</span>
+              </MotionButton>
+            </form>
+
+            <p className="mt-6 text-sm text-slate-400">
+              Already have access?{" "}
+              <Link to="/login" className="font-semibold text-[#9d96ff] transition hover:text-white">
+                Sign in
+              </Link>
+            </p>
+          </MotionDiv>
+        </section>
+      </div>
+    </div>
+  );
+}

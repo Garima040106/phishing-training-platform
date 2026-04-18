@@ -1,11 +1,24 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import toast from "react-hot-toast";
+import { ShieldAlert, ShieldCheck } from "lucide-react";
+
 import api, { initCsrf } from "../api/client";
+import GlowCard from "../components/GlowCard";
+
+const MotionDiv = motion.div;
+const MotionButton = motion.button;
 
 export default function EmailCheckPage() {
   const [emailText, setEmailText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+
+  const confidencePct = useMemo(() => {
+    const c = Number(result?.confidence || 0);
+    return c <= 1 ? c * 100 : c;
+  }, [result]);
 
   const onAnalyze = async (event) => {
     event.preventDefault();
@@ -19,74 +32,103 @@ export default function EmailCheckPage() {
       const { data } = await api.post("/detect-email/", body, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
-      setResult(data.result);
+
+      const payload = data?.result ?? data;
+      const normalized = {
+        is_phishing: Boolean(payload?.is_phishing),
+        confidence: Number(payload?.confidence || 0),
+        label: payload?.label || (payload?.is_phishing ? "phishing" : "legitimate"),
+        features: payload?.features || null,
+      };
+
+      setResult(normalized);
+      toast.success("Email analyzed successfully");
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to analyze email.");
+      const message = err?.response?.data?.error || "Failed to analyze email.";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Email Authenticity Checker</h1>
-      <p className="text-sm text-slate-600">
-        Paste a full email (sender text + subject + body). The model will estimate whether it looks phishing or legitimate.
-      </p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-extrabold tracking-tight text-text">Email Authenticity Scanner</h1>
+        <p className="mt-1 text-sm text-muted">
+          Paste sender, subject, and body. The model estimates phishing probability in real time.
+        </p>
+      </div>
 
-      <form onSubmit={onAnalyze} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <textarea
-          value={emailText}
-          onChange={(e) => setEmailText(e.target.value)}
-          placeholder="Paste email content here..."
-          className="min-h-[220px] w-full rounded-lg border border-slate-300 p-3 text-sm"
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            disabled={loading}
-            className="rounded-lg bg-[#1a237e] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {loading ? "Analyzing..." : "Analyze Email"}
-          </button>
-          {error && <span className="text-sm text-rose-600">{error}</span>}
-        </div>
-      </form>
-
-      {result && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Prediction Result</h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Label</p>
-              <p className={`mt-1 text-lg font-bold ${result.is_phishing ? "text-rose-700" : "text-emerald-700"}`}>
-                {result.label.toUpperCase()}
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Confidence</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{(result.confidence * 100).toFixed(1)}%</p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Risk Signals</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">
-                {result.features.urgency + result.features.links + result.features.attachments + result.features.grammar_noise}
-              </p>
-            </div>
+      <GlowCard className="p-5">
+        <form onSubmit={onAnalyze}>
+          <textarea
+            value={emailText}
+            onChange={(e) => setEmailText(e.target.value)}
+            placeholder="Paste full email content here..."
+            className="min-h-[220px] w-full rounded-lg border border-white/10 bg-background p-3 text-sm text-text outline-none placeholder:text-muted focus:border-accent/55 focus:ring-2 focus:ring-accent/30"
+          />
+          <div className="mt-3 flex items-center gap-3">
+            <MotionButton
+              disabled={loading || !emailText.trim()}
+              whileTap={{ scale: 0.96 }}
+              className="rounded-lg border border-accent bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:shadow-glow disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Analyzing..." : "Analyze Email"}
+            </MotionButton>
+            {error ? <span className="text-sm font-medium text-danger">{error}</span> : null}
           </div>
+        </form>
+      </GlowCard>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-sm font-semibold text-slate-700">Feature Breakdown</p>
-            <ul className="mt-2 grid gap-1 text-sm text-slate-600 md:grid-cols-2">
-              <li>Urgency indicators: {result.features.urgency}</li>
-              <li>Suspicious links: {result.features.links}</li>
-              <li>Attachment signals: {result.features.attachments}</li>
-              <li>Grammar noise: {result.features.grammar_noise}</li>
-              <li>Caps ratio: {result.features.caps_ratio.toFixed(3)}</li>
-              <li>Length: {result.features.length}</li>
-            </ul>
-          </div>
-        </div>
-      )}
+      {result ? (
+        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+          <GlowCard className="p-5">
+            <h2 className="text-lg font-semibold text-text">Prediction Result</h2>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-white/10 bg-background/70 p-3">
+                <p className="text-xs text-muted">Label</p>
+                <p
+                  className={`mt-1 flex items-center gap-2 text-lg font-bold ${
+                    result.is_phishing ? "text-danger" : "text-success"
+                  }`}
+                >
+                  {result.is_phishing ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                  {String(result.label || "unknown").toUpperCase()}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-white/10 bg-background/70 p-3">
+                <p className="text-xs text-muted">Confidence</p>
+                <p className="mt-1 text-lg font-bold text-text">{confidencePct.toFixed(1)}%</p>
+              </div>
+
+              <div className="rounded-lg border border-white/10 bg-background/70 p-3">
+                <p className="text-xs text-muted">Risk Level</p>
+                <p className="mt-1 text-lg font-bold text-text">
+                  {result.is_phishing ? "Elevated" : "Low"}
+                </p>
+              </div>
+            </div>
+
+            {result.features ? (
+              <div className="mt-4 rounded-lg border border-white/10 bg-background/60 p-3">
+                <p className="text-sm font-semibold text-text">Feature Breakdown</p>
+                <ul className="mt-2 grid gap-1 text-sm text-muted md:grid-cols-2">
+                  <li>Urgency indicators: {Number(result.features.urgency || 0)}</li>
+                  <li>Suspicious links: {Number(result.features.links || 0)}</li>
+                  <li>Attachment signals: {Number(result.features.attachments || 0)}</li>
+                  <li>Grammar noise: {Number(result.features.grammar_noise || 0)}</li>
+                  <li>Caps ratio: {Number(result.features.caps_ratio || 0).toFixed(3)}</li>
+                  <li>Length: {Number(result.features.length || 0)}</li>
+                </ul>
+              </div>
+            ) : null}
+          </GlowCard>
+        </MotionDiv>
+      ) : null}
     </div>
   );
 }

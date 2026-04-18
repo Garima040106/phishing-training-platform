@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { AlertTriangle, CheckCircle2, Clock3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import api from "../api/client";
+import GlowCard from "../components/GlowCard";
 import Loading from "../components/Loading";
 
 const MotionDiv = motion.div;
@@ -18,24 +20,24 @@ const INDICATOR_TO_CATEGORY = {
 
 function difficultyPill(difficulty) {
   const d = String(difficulty || "").toLowerCase();
-  if (d === "easy") return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  if (d === "medium") return "bg-amber-100 text-amber-900 border-amber-200";
-  if (d === "hard") return "bg-rose-100 text-rose-900 border-rose-200";
-  return "bg-slate-100 text-slate-700 border-slate-200";
+  if (d === "easy") return "border-success/45 bg-success/15 text-success";
+  if (d === "medium") return "border-warning/45 bg-warning/15 text-warning";
+  if (d === "hard") return "border-danger/45 bg-danger/15 text-danger";
+  return "border-white/20 bg-white/5 text-text";
 }
 
 function buildExplanation({ isCorrect, scenarioIsPhishing, indicators, timedOut }) {
   const verdict = scenarioIsPhishing ? "phishing" : "legitimate";
   const base = isCorrect
-    ? `Correct — this email is ${verdict}.`
-    : `Incorrect — this email is ${verdict}.`;
+    ? `Correct. This email is ${verdict}.`
+    : `Incorrect. This email is ${verdict}.`;
 
   const hint = Array.isArray(indicators) && indicators.length
     ? `Key signals: ${indicators.slice(0, 4).join(", ")}.`
     : "";
 
   const timeoutNote = timedOut ? " (Timed out)" : "";
-  return `${base}${timeoutNote}${hint ? " " + hint : ""}`;
+  return `${base}${timeoutNote}${hint ? ` ${hint}` : ""}`;
 }
 
 export default function QuizPage() {
@@ -86,7 +88,7 @@ export default function QuizPage() {
   }, []);
 
   useEffect(() => {
-    fetchScenario();
+    void fetchScenario();
   }, [fetchScenario]);
 
   const submitAnswer = useCallback(
@@ -104,40 +106,40 @@ export default function QuizPage() {
           response_time: Math.round(elapsedSec * 10) / 10,
         });
 
-      const fb = res.data;
-      const isCorrect = Boolean(fb.is_correct);
+        const fb = res.data;
+        const isCorrect = Boolean(fb.is_correct);
 
-      if (isCorrect) {
-        setScore((s) => s + 1);
-      } else {
-        const indicators = Array.isArray(fb.indicators) ? fb.indicators : [];
-        setMistakes((prev) => {
-          const next = { ...prev };
-          for (const ind of indicators) {
-            const cat = INDICATOR_TO_CATEGORY[ind];
-            if (cat) next[cat] = (next[cat] || 0) + 1;
-          }
-          return next;
-        });
-      }
+        if (isCorrect) {
+          setScore((s) => s + 1);
+        } else {
+          const indicators = Array.isArray(fb.indicators) ? fb.indicators : [];
+          setMistakes((prev) => {
+            const next = { ...prev };
+            for (const ind of indicators) {
+              const cat = INDICATOR_TO_CATEGORY[ind];
+              if (cat) next[cat] = (next[cat] || 0) + 1;
+            }
+            return next;
+          });
+        }
 
-      setFeedback({
-        isCorrect,
-        explanation: buildExplanation({
+        setFeedback({
           isCorrect,
-          scenarioIsPhishing: Boolean(fb.scenario_is_phishing),
-          indicators: fb.indicators,
-          timedOut,
-        }),
-        raw: fb,
-      });
+          explanation: buildExplanation({
+            isCorrect,
+            scenarioIsPhishing: Boolean(fb.scenario_is_phishing),
+            indicators: fb.indicators,
+            timedOut,
+          }),
+          raw: fb,
+        });
       } catch (err) {
         setError(err?.response?.data?.error || "Failed to submit answer.");
       } finally {
         setSubmitting(false);
       }
     },
-    [scenario, submitting, feedback]
+    [feedback, scenario, submitting]
   );
 
   useEffect(() => {
@@ -152,7 +154,7 @@ export default function QuizPage() {
 
     const id = window.setInterval(() => setTimer((t) => t - 1), 1000);
     return () => window.clearInterval(id);
-  }, [loading, scenario, feedback, timer, submitAnswer]);
+  }, [feedback, loading, scenario, submitAnswer, timer]);
 
   const next = async () => {
     const nextIndex = questionIndex + 1;
@@ -175,78 +177,76 @@ export default function QuizPage() {
     await fetchScenario();
   };
 
-  if (loading && !payload) return <Loading label="Loading practice scenario…" />;
+  if (loading && !payload) return <Loading label="Loading practice scenario..." />;
 
   return (
     <MotionDiv
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="mx-auto max-w-4xl space-y-6"
+      className="mx-auto max-w-5xl space-y-6"
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Practice</h1>
-          <p className="mt-1 text-sm text-slate-600">Classify each email in under 30 seconds.</p>
+          <h1 className="text-3xl font-extrabold tracking-tight text-text">Live Phishing Simulation</h1>
+          <p className="mt-1 text-sm text-muted">Classify each email in under 30 seconds.</p>
         </div>
+
         <div className="flex items-center gap-3">
-          <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-semibold text-slate-700">
+          <div className="rounded-full border border-white/15 bg-surface px-3 py-1 text-sm font-semibold text-text">
             {progressLabel}
           </div>
           <div
-            className={`rounded-full border px-3 py-1 text-sm font-extrabold ${
-              timer <= 10 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-white text-slate-700"
+            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-sm font-extrabold ${
+              timer <= 10
+                ? "border-danger/45 bg-danger/15 text-danger"
+                : "border-accent/35 bg-accent/10 text-accent"
             }`}
           >
+            <Clock3 className="h-3.5 w-3.5" />
             {timer}s
           </div>
         </div>
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-800">{error}</div>
+        <GlowCard className="border-danger/35 bg-danger/10 p-4 text-danger">{error}</GlowCard>
       ) : null}
 
       {!scenario ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="text-sm text-slate-600">No scenario available.</div>
-        </div>
+        <GlowCard className="p-6 text-sm text-muted">No scenario available.</GlowCard>
       ) : (
-        <MotionDiv
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-200 bg-white shadow-sm"
-        >
-          <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <GlowCard className="overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-white/10 bg-background/50 p-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-500">Email scenario</div>
-              <div className="mt-1 truncate text-xl font-extrabold text-slate-900">{scenario.title}</div>
+              <div className="text-sm font-semibold text-muted">Email scenario</div>
+              <div className="mt-1 truncate text-xl font-extrabold text-text">{scenario.title}</div>
             </div>
             <div className="flex items-center gap-2">
               <div className={`rounded-full border px-3 py-1 text-sm font-extrabold capitalize ${difficultyPill(difficulty)}`}>
                 {difficulty}
               </div>
-              <div className="hidden sm:block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+              <div className="hidden rounded-full border border-white/15 bg-surface px-3 py-1 text-xs font-semibold text-muted sm:block">
                 {payload?.assigned_by === "manual_override" ? "Manual" : "Adaptive"}
               </div>
             </div>
           </div>
 
           <div className="p-5">
-            <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5">
+            <div className="rounded-xl border border-white/10 bg-background/65 p-5">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">From</div>
-                  <div className="mt-1 break-words font-mono text-sm text-slate-800">{scenario.sender_email}</div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-muted">From</div>
+                  <div className="mt-1 break-words font-mono text-sm text-text">{scenario.sender_email}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Subject</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">{scenario.subject}</div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-muted">Subject</div>
+                  <div className="mt-1 text-sm font-semibold text-text">{scenario.subject}</div>
                 </div>
               </div>
-              <div className="mt-4 border-t border-slate-200 pt-4">
-                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Body</div>
-                <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{scenario.body}</div>
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <div className="text-xs font-bold uppercase tracking-wide text-muted">Body</div>
+                <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-text/90">{scenario.body}</div>
               </div>
             </div>
 
@@ -255,45 +255,51 @@ export default function QuizPage() {
                 <MotionButton
                   type="button"
                   whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={{ scale: 0.96 }}
                   disabled={submitting}
                   onClick={() => submitAnswer("phishing")}
-                  className="rounded-2xl bg-rose-600 px-5 py-3 text-base font-extrabold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-60"
+                  className="rounded-xl border border-danger/40 bg-danger/85 px-5 py-3 text-base font-extrabold text-white transition hover:bg-danger disabled:opacity-60"
                 >
-                  Phishing
+                  <span className="inline-flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Phishing
+                  </span>
                 </MotionButton>
                 <MotionButton
                   type="button"
                   whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={{ scale: 0.96 }}
                   disabled={submitting}
                   onClick={() => submitAnswer("legitimate")}
-                  className="rounded-2xl bg-emerald-600 px-5 py-3 text-base font-extrabold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
+                  className="rounded-xl border border-success/40 bg-success/85 px-5 py-3 text-base font-extrabold text-background transition hover:bg-success disabled:opacity-60"
                 >
-                  Legitimate
+                  <span className="inline-flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Legitimate
+                  </span>
                 </MotionButton>
               </div>
             ) : (
               <MotionDiv
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`mt-5 rounded-2xl border p-4 ${
-                  feedback.isCorrect ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"
+                className={`mt-5 rounded-xl border p-4 ${
+                  feedback.isCorrect
+                    ? "border-success/40 bg-success/12"
+                    : "border-danger/40 bg-danger/12"
                 }`}
               >
-                <div className={`text-sm font-extrabold ${feedback.isCorrect ? "text-emerald-900" : "text-rose-900"}`}>
-                  {feedback.isCorrect ? "Correct" : "Wrong"}
+                <div className={`text-sm font-extrabold ${feedback.isCorrect ? "text-success" : "text-danger"}`}>
+                  {feedback.isCorrect ? "Correct" : "Incorrect"}
                 </div>
-                <div className={`mt-1 text-sm ${feedback.isCorrect ? "text-emerald-900/80" : "text-rose-900/80"}`}>
-                  {feedback.explanation}
-                </div>
+                <div className="mt-1 text-sm text-text/90">{feedback.explanation}</div>
 
                 {Array.isArray(feedback.raw?.indicators) && feedback.raw.indicators.length ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {feedback.raw.indicators.slice(0, 6).map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700"
+                        className="rounded-full border border-white/15 bg-surface px-2.5 py-1 text-xs font-semibold text-muted"
                       >
                         {tag}
                       </span>
@@ -302,15 +308,15 @@ export default function QuizPage() {
                 ) : null}
 
                 <div className="mt-4 flex items-center justify-between">
-                  <div className="text-xs font-semibold text-slate-600">
-                    Score: <span className="font-extrabold text-slate-900">{score}</span>
+                  <div className="text-xs font-semibold text-muted">
+                    Score: <span className="font-extrabold text-text">{score}</span>
                   </div>
                   <MotionButton
                     type="button"
                     whileHover={{ y: -2 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileTap={{ scale: 0.96 }}
                     onClick={next}
-                    className="rounded-2xl bg-[#1a237e] px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-[#121a5f]"
+                    className="rounded-lg border border-accent bg-accent px-4 py-2 text-sm font-extrabold text-white shadow-glow"
                   >
                     {questionIndex + 1 >= TOTAL_QUESTIONS ? "View results" : "Next"}
                   </MotionButton>
@@ -318,7 +324,7 @@ export default function QuizPage() {
               </MotionDiv>
             )}
           </div>
-        </MotionDiv>
+        </GlowCard>
       )}
     </MotionDiv>
   );
