@@ -1729,8 +1729,8 @@ def spa_index(request, path=""):
     dist_index = Path(settings.BASE_DIR) / "frontend" / "dist" / "index.html"
     if not dist_index.exists():
         return HttpResponse(
-            "Frontend build not found. Run: cd frontend && npm run build",
-            status=503,
+            "Backend API is running. Open the frontend on Vercel and call APIs under /api/.",
+            status=200,
             content_type="text/plain",
         )
     return FileResponse(dist_index.open("rb"), content_type="text/html")
