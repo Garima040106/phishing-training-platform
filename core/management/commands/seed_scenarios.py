@@ -93,9 +93,20 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self._set_csv_field_size_limit()
         rng = random.Random(42)
-        data_dir = self._resolve_data_dir(options["data_dir"])
+        data_dir = self._resolve_data_dir(
+            options["data_dir"],
+            allow_missing_default=options["data_dir"] == "data",
+        )
         has_complexity_column = self._table_has_column("core_phishingscenario", "complexity_score")
         has_source_dataset_column = self._table_has_column("core_phishingscenario", "source_dataset")
+
+        if data_dir is None:
+            self._seed_builtin_scenarios(
+                reset=options["reset"],
+                has_complexity_column=has_complexity_column,
+                has_source_dataset_column=has_source_dataset_column,
+            )
+            return
 
         dataset1_files = [
             path
@@ -104,10 +115,18 @@ class Command(BaseCommand):
         ]
         dataset2_file = self._find_enron_file(data_dir)
 
-        if not dataset1_files:
-            raise CommandError(f"No dataset-1 CSV files found in {data_dir}")
-        if dataset2_file is None:
-            raise CommandError(f"Could not find dataset-2 file 'emails.csv' in {data_dir}")
+        if not dataset1_files or dataset2_file is None:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Kaggle CSV files are missing/incomplete. Falling back to built-in sample scenarios."
+                )
+            )
+            self._seed_builtin_scenarios(
+                reset=options["reset"],
+                has_complexity_column=has_complexity_column,
+                has_source_dataset_column=has_source_dataset_column,
+            )
+            return
 
         existing_signatures = set()
         if not options["reset"]:
@@ -196,7 +215,7 @@ class Command(BaseCommand):
             f"{difficulty_counts['easy']}/{difficulty_counts['medium']}/{difficulty_counts['hard']}"
         )
 
-    def _resolve_data_dir(self, data_dir_option: str) -> Path:
+    def _resolve_data_dir(self, data_dir_option: str, *, allow_missing_default: bool = False) -> Path | None:
         configured = Path(data_dir_option)
         if not configured.is_absolute():
             configured = Path(settings.BASE_DIR) / configured
@@ -213,7 +232,207 @@ class Command(BaseCommand):
             )
             return fallback
 
+        if allow_missing_default:
+            self.stdout.write(
+                self.style.WARNING(
+                    "No Kaggle CSV directory found (checked 'data' and 'datasets'). "
+                    "Seeding built-in sample scenarios instead."
+                )
+            )
+            return None
+
         raise CommandError(f"Data directory '{configured}' does not exist.")
+
+    def _seed_builtin_scenarios(self, *, reset: bool, has_complexity_column: bool, has_source_dataset_column: bool):
+        candidates = self._builtin_candidates()
+        existing_signatures = set()
+
+        if not reset:
+            for row in PhishingScenario.objects.values_list("is_phishing", "subject", "body"):
+                existing_signatures.add(self._signature(row[0], row[1], row[2]))
+
+        created = 0
+        with transaction.atomic():
+            if reset:
+                deleted, _ = PhishingScenario.objects.all().delete()
+                self.stdout.write(self.style.WARNING(f"Deleted {deleted} existing scenario records."))
+
+            for record in candidates:
+                signature = self._signature(record.is_phishing, record.subject, record.body)
+                if signature in existing_signatures:
+                    continue
+                existing_signatures.add(signature)
+
+                if has_complexity_column or has_source_dataset_column:
+                    self._insert_with_sql(
+                        record,
+                        has_complexity_column=has_complexity_column,
+                        has_source_dataset_column=has_source_dataset_column,
+                    )
+                else:
+                    PhishingScenario.objects.create(
+                        title=record.title,
+                        sender_email=record.sender_email,
+                        subject=record.subject,
+                        body=record.body,
+                        is_phishing=record.is_phishing,
+                        difficulty=record.difficulty,
+                        phishing_indicators=record.phishing_indicators,
+                    )
+                created += 1
+
+        phishing_count = sum(1 for item in candidates if item.is_phishing)
+        legitimate_count = len(candidates) - phishing_count
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Seeded {created} built-in scenarios (catalog size {len(candidates)}). "
+                f"Phishing: {phishing_count}, Legitimate: {legitimate_count}."
+            )
+        )
+
+    def _builtin_candidates(self) -> list[ScenarioCandidate]:
+        # This fallback keeps production boot healthy when Kaggle CSVs are not present.
+        raw_items = [
+            {
+                "title": "Prize Giveaway Confirmation",
+                "sender_email": "rewards@secure-prize-center.com",
+                "subject": "You won $5000 voucher - claim today",
+                "body": "Congratulations! Your email was selected for our loyalty draw. To release your $5000 voucher, verify your account immediately at the link below and submit card details for identity check.",
+                "is_phishing": True,
+                "difficulty": "easy",
+                "phishing_indicators": "urgency,links,sender",
+                "source_dataset": "kaggle-phishing-email-dataset",
+            },
+            {
+                "title": "Payroll Account Suspension Notice",
+                "sender_email": "alerts@company-payroll-security.com",
+                "subject": "Payroll access suspended - action required",
+                "body": "Our monitoring system detected suspicious activity. Your salary account is temporarily suspended. Click the verification portal immediately to avoid payroll hold this month.",
+                "is_phishing": True,
+                "difficulty": "easy",
+                "phishing_indicators": "urgency,links,sender",
+                "source_dataset": "kaggle-phishing-email-dataset",
+            },
+            {
+                "title": "Library Return Reminder",
+                "sender_email": "noreply@citylibrary.org",
+                "subject": "Reminder: Book due in 2 days",
+                "body": "Hello, this is a reminder that your borrowed title is due in two days. You can return it in person or renew from your official library account dashboard.",
+                "is_phishing": False,
+                "difficulty": "easy",
+                "phishing_indicators": "",
+                "source_dataset": "kaggle-enron-email-dataset",
+            },
+            {
+                "title": "Team Lunch Confirmation",
+                "sender_email": "hr@company.com",
+                "subject": "Friday team lunch RSVP",
+                "body": "Please confirm by Thursday whether you will join the monthly team lunch. No external form is required; reply directly to this thread for headcount.",
+                "is_phishing": False,
+                "difficulty": "easy",
+                "phishing_indicators": "",
+                "source_dataset": "kaggle-enron-email-dataset",
+            },
+            {
+                "title": "VPN Session Timeout",
+                "sender_email": "it-support@company-helpdesk.net",
+                "subject": "VPN certificate refresh required",
+                "body": "Your remote VPN token expires tonight. Download the attached certificate updater and sign in to keep access to internal tools. Delays may interrupt next login.",
+                "is_phishing": True,
+                "difficulty": "medium",
+                "phishing_indicators": "attachments,sender,urgency",
+                "source_dataset": "kaggle-phishing-email-dataset",
+            },
+            {
+                "title": "Procurement Invoice Follow-up",
+                "sender_email": "billing@trusted-supplier-payments.com",
+                "subject": "Re: Overdue invoice 39418",
+                "body": "Finance requested settlement for invoice 39418. Please review the document and update payment credentials in the linked supplier portal so we can avoid service interruption.",
+                "is_phishing": True,
+                "difficulty": "medium",
+                "phishing_indicators": "attachments,links,sender",
+                "source_dataset": "kaggle-phishing-email-dataset",
+            },
+            {
+                "title": "Project Kickoff Meeting",
+                "sender_email": "pm@company.com",
+                "subject": "Kickoff agenda and meeting room",
+                "body": "Sharing tomorrow's kickoff agenda and meeting room details. The deck is available in the internal drive folder used by our project team.",
+                "is_phishing": False,
+                "difficulty": "medium",
+                "phishing_indicators": "",
+                "source_dataset": "kaggle-enron-email-dataset",
+            },
+            {
+                "title": "Customer Contract Redlines",
+                "sender_email": "legal@partnerco.com",
+                "subject": "Updated contract draft for review",
+                "body": "Please review the attached draft with redlines from legal. If approved, we will schedule a short sign-off call to finalize timelines and responsibilities.",
+                "is_phishing": False,
+                "difficulty": "medium",
+                "phishing_indicators": "",
+                "source_dataset": "kaggle-enron-email-dataset",
+            },
+            {
+                "title": "Executive Wire Transfer Request",
+                "sender_email": "ceo-office@globalstrategy-mail.com",
+                "subject": "Confidential: urgent transfer before audit",
+                "body": "I am in a confidential audit meeting and cannot take calls. Execute a same-day transfer to the beneficiary in the attached sheet and confirm once complete. Keep this strictly private from the wider finance team.",
+                "is_phishing": True,
+                "difficulty": "hard",
+                "phishing_indicators": "urgency,attachments,sender",
+                "source_dataset": "kaggle-phishing-email-dataset",
+            },
+            {
+                "title": "Identity Provider Risk Alert",
+                "sender_email": "security-alerts@id-access-center.net",
+                "subject": "New sign-in risk detected on your account",
+                "body": "A high-risk sign-in was detected from an unfamiliar location. Review the sign-in details and reconfirm your second factor settings at the secure account portal to prevent lockout.",
+                "is_phishing": True,
+                "difficulty": "hard",
+                "phishing_indicators": "urgency,links,sender",
+                "source_dataset": "kaggle-phishing-email-dataset",
+            },
+            {
+                "title": "Cloud Usage Review",
+                "sender_email": "cloud-ops@company.com",
+                "subject": "Quarterly cloud cost summary",
+                "body": "Attached is the quarterly cloud usage summary prepared by operations. Please add comments in the shared workbook before next Monday's review with engineering leadership.",
+                "is_phishing": False,
+                "difficulty": "hard",
+                "phishing_indicators": "",
+                "source_dataset": "kaggle-enron-email-dataset",
+            },
+            {
+                "title": "Compliance Policy Update",
+                "sender_email": "compliance@company.com",
+                "subject": "Updated acceptable use policy",
+                "body": "Compliance has published an updated acceptable use policy. Please read the document in the internal knowledge base and acknowledge in the HR portal by end of week.",
+                "is_phishing": False,
+                "difficulty": "hard",
+                "phishing_indicators": "",
+                "source_dataset": "kaggle-enron-email-dataset",
+            },
+        ]
+
+        candidates: list[ScenarioCandidate] = []
+        for item in raw_items:
+            cleaned_body = self._clean_email_text(item["body"])
+            candidates.append(
+                ScenarioCandidate(
+                    title=item["title"],
+                    sender_email=item["sender_email"],
+                    subject=item["subject"],
+                    body=cleaned_body,
+                    is_phishing=item["is_phishing"],
+                    difficulty=item["difficulty"],
+                    phishing_indicators=item["phishing_indicators"],
+                    complexity_score=self._complexity_score(cleaned_body),
+                    source_dataset=item["source_dataset"],
+                )
+            )
+
+        return candidates
 
     def _find_enron_file(self, data_dir: Path) -> Path | None:
         for path in data_dir.rglob("emails.csv"):
