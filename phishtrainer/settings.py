@@ -78,6 +78,13 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Render provides the public hostname via this env var.
+# Append it automatically so auth/register endpoints do not fail with 400 when
+# ALLOWED_HOSTS is accidentally incomplete in deployment settings.
+render_external_hostname = (os.environ.get("RENDER_EXTERNAL_HOSTNAME") or "").strip()
+if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_external_hostname)
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',

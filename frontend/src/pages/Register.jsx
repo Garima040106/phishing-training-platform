@@ -46,6 +46,8 @@ export default function Register() {
       let message = "Registration failed. Check your details and try again.";
       if (typeof apiError === "string" && apiError.trim()) {
         message = apiError;
+      } else if (status === 400) {
+        message = "Registration service rejected the request. Please try again in a minute.";
       } else if (status === 404) {
         message = "Registration service is unavailable right now. Please try again shortly.";
       } else if (status >= 500) {

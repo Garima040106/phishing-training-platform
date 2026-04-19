@@ -41,6 +41,8 @@ export default function Login() {
       let message = "Invalid credentials.";
       if (typeof apiError === "string" && apiError.trim()) {
         message = apiError;
+      } else if (status === 400) {
+        message = "Authentication service rejected the request. Please try again in a minute.";
       } else if (status === 404) {
         message = "Authentication service is unavailable right now. Please try again shortly.";
       } else if (status >= 500) {
