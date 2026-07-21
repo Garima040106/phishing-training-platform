@@ -33,7 +33,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from ml_engine.kaggle_trainer import predict_email_phishing
+from ml_engine.kaggle_trainer import detect_anomaly, predict_email_phishing
 from ml_engine.recommender import get_recommendations
 from ml_engine.user_profiling import classify_user_with_profile_model, extract_user_performance_features
 
@@ -605,8 +605,9 @@ def _anomaly_personalization_analysis(user):
     variance = sum((value - mean_correctness) ** 2 for value in correctness) / max(len(correctness), 1)
     consistency_score = max(0.0, min(1.0, 1.0 - (2 * variance)))
 
-    # Note: we intentionally avoid calling the ML anomaly detector here to keep this endpoint lightweight.
-    isolation_anomaly = False
+    overall_accuracy = mean_correctness
+    overall_avg_response_time = sum(float(item.response_time) for item in attempts) / len(attempts)
+    isolation_anomaly = bool(detect_anomaly(overall_accuracy, overall_avg_response_time, consistency_score))
 
     recommended_modules = []
     seen_modules = set()
