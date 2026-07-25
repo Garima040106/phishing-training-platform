@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import ShieldScene from "../components/ShieldScene";
 import { useAuth } from "../context/AuthContext";
+import { extractApiErrorMessage } from "../api/client";
 
 const MotionDiv = motion.div;
 const MotionButton = motion.button;
@@ -41,13 +42,11 @@ export default function Register() {
       navigate("/quiz");
     } catch (err) {
       const status = err?.response?.status;
-      const apiError = err?.response?.data?.error;
+      const apiError = extractApiErrorMessage(err);
 
       let message = "Registration failed. Check your details and try again.";
-      if (typeof apiError === "string" && apiError.trim()) {
+      if (apiError) {
         message = apiError;
-      } else if (status === 400) {
-        message = "Registration service rejected the request. Please try again in a minute.";
       } else if (status === 404) {
         message = "Registration service is unavailable right now. Please try again shortly.";
       } else if (status >= 500) {
