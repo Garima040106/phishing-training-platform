@@ -8,7 +8,7 @@ import LoadingScreen from "./components/LoadingScreen";
 import PageWrapper from "./components/PageWrapper";
 import { useAuth } from "./context/AuthContext";
 
-import DashboardPage from "./pages/DashboardPage";
+import DashboardPage from "./pages/Dashboard";
 import EmailCheckPage from "./pages/EmailCheckPage";
 import Leaderboard from "./pages/Leaderboard";
 import Login from "./pages/Login";
